@@ -348,7 +348,9 @@ def main():
     ev.add_argument('--model',required=True);ev.add_argument('--codes',required=True);ev.add_argument('--prompts',required=True)
     ev.add_argument('--task',required=True);ev.add_argument('--output',required=True);ev.add_argument('--seed',type=int,default=999)
     for cmd in (prep,tr,gen,ev):cmd.add_argument('--device',default='cuda:0')
-    args=p.parse_args();torch.set_num_threads(8);globals()[args.command](args)
+    args=p.parse_args();torch.set_num_threads(8)
+    command = {'evaluate-heldout': 'evaluate_heldout'}.get(args.command, args.command)
+    globals()[command](args)
 
 
 if __name__=='__main__':main()
