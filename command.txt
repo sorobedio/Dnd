@@ -1,0 +1,10 @@
+Processed prompts: 100%|██████████| 1172/1172 [00:04<00:00, 240.89it/s, est. speed input: 32438.59 toks/s, output: 727.28 toks/s]
+Saved 1172 predictions to ../results/common_sense_reasoning/ARC-c/ARC-cT_on_ARC-cV_9.jsonl
+INFO 09-05 14:09:01 [utils.py:615] [shutdown] Process manager: send sigterm to process EngineCore
+(EngineCore pid=2123995) INFO 09-05 14:09:01 [core.py:1329] [shutdown] EngineCore: trigger received signal=SIGTERM
+(EngineCore pid=2123995) INFO 09-05 14:09:01 [core.py:1465] [shutdown] EngineCore: start mode=abort timeout=0s
+(EngineCore pid=2123995) INFO 09-05 14:09:01 [core.py:1496] [shutdown] EngineCore: request processing complete; starting resource teardown
+(EngineCore pid=2123995) INFO 09-05 14:09:01 [core.py:1342] [shutdown] EngineCore: exiting busy loop
+[1.0, 0.5127986348122867]
+
+

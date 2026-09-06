@@ -23,7 +23,13 @@ class HyperConv3d(nn.Module):
         nn.init.uniform_(self.bias, -1.0 / self.bias.numel(), 1.0 / self.bias.numel())
 
     def forward(self, x):
-        x = self.norm(x)
+        # Flatten the normalized axes to avoid incorrect multidimensional
+        # LayerNorm weight gradients in large-batch CUDA kernels.
+        shape = x.shape
+        x = F.layer_norm(
+            x.flatten(-2), (self.norm.weight.numel(),),
+            self.norm.weight.flatten(), self.norm.bias.flatten(), self.norm.eps,
+        ).reshape(shape)
         outer_shape, inner_shape = x.shape[:-3], x.shape[-3:]
         x = torch.flatten(x, end_dim=-4)
         x = (self.conv_width_first(x) + self.conv_height_first(x) + self.bias) / 3

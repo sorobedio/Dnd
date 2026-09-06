@@ -5,7 +5,8 @@ import json
 import os
 import sys
 
-root = os.sep + os.sep.join(__file__.split(os.sep)[1 : __file__.split(os.sep).index("Drag-and-Drop-LLMs") + 1])
+from pathlib import Path
+root = str(Path(__file__).resolve().parents[4])
 sys.path.append(root)
 os.chdir(root)
 with open("./workspace/main/config.json", "r") as f:
@@ -14,7 +15,8 @@ USE_WANDB = workspace_config["use_wandb"]
 if USE_WANDB:
     import wandb
 
-    os.environ["WANDB_API_KEY"] = workspace_config["wandb_api_key"]
+    if workspace_config.get("wandb_api_key"):
+        os.environ["WANDB_API_KEY"] = workspace_config["wandb_api_key"]
 
 # torch
 import torch
@@ -29,7 +31,7 @@ from transformers import AutoModel, AutoTokenizer
 accelerate.utils.set_seed(SEED)
 dataset_tag = "ARC-c"
 
-DATASET_ROOT = "./data/common_sense_reasoning"
+DATASET_ROOT = os.environ.get("DND_DATASET_ROOT", str(Path(root).parent / "Loradatasets/common_sense_reasoning"))
 CONFIG_ROOT = f"./workspace/datasets/common_sense_reasoning"
 COND_ROOT = "./prepare/data"
 extractor = "./models/all-MiniLM-L12-v2"
@@ -43,7 +45,13 @@ from workspace.dnd.tools import calculate_mean_criterion_weight, start_monitor
 datasets = ["ARC-e", "BoolQ",  "PIQA", "HellaSwag"]
 
 
-accelerator = Accelerator()
+micro_batch_size = int(os.environ.get("DND_MICRO_BATCH_SIZE", "64"))
+global_batch_size = int(os.environ.get("DND_BATCH_SIZE", "64"))
+num_processes = int(os.environ.get("NUM_PROCESSES", "1"))
+if global_batch_size % (micro_batch_size * num_processes):
+    raise ValueError(f"Microbatch times process count must divide {global_batch_size}")
+accumulation_steps = global_batch_size // (micro_batch_size * num_processes)
+accelerator = Accelerator(mixed_precision="bf16", gradient_accumulation_steps=accumulation_steps)
 max_text_length = 384
 config: dict[str, [float, int, str, dict]] = {
     # global setting
@@ -59,12 +67,15 @@ config: dict[str, [float, int, str, dict]] = {
     "dataset_tag": dataset_tag,
     "generated_file": f"{CONFIG_ROOT}/{dataset_tag}/",
     # train setting
-    "max_num_gpus": 8,
-    "batch_size": 64,
-    "num_workers": 8,
+    "max_num_gpus": num_processes,
+    "batch_size": global_batch_size,
+    "num_workers": int(os.environ.get("DND_NUM_WORKERS", "4")),
     "prefetch_factor": 1,
     "warmup_steps": 1,
-    "total_steps": 4000,
+    "total_steps": int(os.environ.get("DND_TOTAL_STEPS", "4000")),
+    "micro_batch_size": micro_batch_size,
+    "effective_batch_size": global_batch_size,
+    "gradient_accumulation_steps": accumulation_steps,
     "learning_rate": 3e-5,
     "weight_decay": 0.1,
     "max_grad_norm": 1.0,
@@ -130,9 +141,9 @@ test_set = Dataset(
 
 
 # process dataloader
-config["batch_size"] = config["batch_size"] // int(os.environ["NUM_PROCESSES"])
+config["batch_size"] = micro_batch_size
 if accelerator.is_main_process:
-    print(f"batchsize:{config['batch_size']}; total:{config['batch_size'] * int(os.environ['NUM_PROCESSES'])}")
+    print(f"microbatch:{micro_batch_size}; accumulation:{accumulation_steps}; effective batch:{global_batch_size}")
 train_loader = DataLoader(
     dataset=train_set,
     batch_size=config["batch_size"],
@@ -197,76 +208,64 @@ if __name__ == "__main__":
 config["tag"] = config["model_tag"] + "__" + config["dataset_tag"]
 # noinspection PyUnboundLocalVariable
 if __name__ == "__main__" and USE_WANDB and accelerator.is_main_process:
-    wandb.login(key=workspace_config["wandb_api_key"])
+    wandb.login()
     wandb.init(
         project="DnD",
         name=config["tag"],
         config=config,
     )
-    start_monitor(second=20)
+    if os.environ.get("DND_GPU_MONITOR") == "1":
+        start_monitor(second=20)
 
 
 # Train
 def train():
-    if not USE_WANDB:
-        train_loss = 0
-        this_steps = 0
-    if accelerator.is_main_process:
-        print("==> Training...")
+    print("==> Training...", flush=True)
     model.train()
-    for batch_idx, (tokens, cond_id, cond_mask) in enumerate(train_loader):
-        conditions = {"input_ids": cond_id.to(accelerator.device), "attention_mask": cond_mask.to(accelerator.device)}
-        optimizer.zero_grad()
-        tokens = tokens.to(accelerator.device)
-        mask = ~torch.isnan(tokens)
-        tokens = torch.nan_to_num_(tokens, nan=0.0)
-        # noinspection PyArgumentList
-        with accelerator.autocast():
-            loss = model(
-                source=None,
-                mask=mask,
-                condition=conditions,
-                target=tokens,
-                noise_enhance=config.get("noise_enhance", None),
-            )  # forward
-        accelerator.backward(loss)
-        if accelerator.sync_gradients:
-            accelerator.clip_grad_norm_(model.parameters(), config["max_grad_norm"])
-        optimizer.step()
-        scheduler.step(batch_idx)
-        
+    optimizer.zero_grad()
+    update_step = 0
+    accumulated_loss = 0.0
+    for tokens, cond_id, cond_mask in train_loader:
+        with accelerator.accumulate(model):
+            conditions = {"input_ids": cond_id.to(accelerator.device), "attention_mask": cond_mask.to(accelerator.device)}
+            tokens = tokens.to(accelerator.device)
+            mask = ~torch.isnan(tokens)
+            tokens = torch.nan_to_num_(tokens, nan=0.0)
+            with accelerator.autocast():
+                loss = model(source=None, mask=mask, condition=conditions, target=tokens,
+                             noise_enhance=config.get("noise_enhance"))
+            if not torch.isfinite(loss):
+                raise RuntimeError(f"Non-finite loss at update {update_step + 1}")
+            accumulated_loss += loss.detach().float().item() / accumulation_steps
+            accelerator.backward(loss)
+            if accelerator.sync_gradients:
+                accelerator.clip_grad_norm_(model.parameters(), config["max_grad_norm"])
+            optimizer.step()
+            optimizer.zero_grad()
+        if not accelerator.sync_gradients:
+            continue
+        scheduler.step(update_step)
+        update_step += 1
         if accelerator.is_main_process:
-            # log ans update
+            metrics = {"train_loss": accumulated_loss, "learning_rate": optimizer.param_groups[0]["lr"], "optimizer_step": update_step}
             if USE_WANDB:
-                wandb.log(
-                    {"train_loss": loss.item(), "learning_rate": optimizer.state_dict()["param_groups"][0]["lr"]}
-                )  # update diction
-            else:  # not use wandb
-                # noinspection PyUnboundLocalVariable
-                train_loss, this_steps = train_loss + loss.item(), this_steps + 1
-                if this_steps % config["print_every"] == 0:
-                    if accelerator.is_main_process:
-                        print(f"step:{this_steps} Loss: {train_loss/this_steps:.6f}")
-                    train_loss = 0
-            if batch_idx % config["save_every"] == 0:
+                wandb.log(metrics, step=update_step)
+            print(f"step:{update_step}/{config['total_steps']} Loss:{accumulated_loss:.6f}", flush=True)
+            if update_step % config["save_every"] == 0 or update_step == config["total_steps"]:
                 os.makedirs(config["save_folder"], exist_ok=True)
-                state = accelerator.get_state_dict(model)
-                keys_to_delete = [key for key in state.keys() if key.startswith("condition_module")]
-                for key in keys_to_delete:
-                    del state[key]
-                # noinspection PyTypeChecker
+                state = {k: v for k, v in accelerator.get_state_dict(model).items() if not k.startswith("condition_module")}
                 accelerator.save(state, os.path.join(config["save_folder"], config["tag"] + ".pth"))
-                if batch_idx % 1000 == 0:
-                    accelerator.save(state, os.path.join(config["save_folder"], config["tag"] + f"{batch_idx}.pth"))
-                if accelerator.is_main_process:
-                    print("\nEvaluating on eval set:")
-                generate(iterator=eval_iterator, idx=batch_idx // config["save_every"])
-                if accelerator.is_main_process:
-                    print("\nEvaluating on test set:")
-                generate(iterator=test_iterator, idx=batch_idx // config["save_every"])
+                if update_step % 1000 == 0:
+                    accelerator.save(state, os.path.join(config["save_folder"], config["tag"] + f"{update_step}.pth"))
+                del state
+                generate(iterator=eval_iterator, idx=update_step // config["save_every"])
+                generate(iterator=test_iterator, idx=update_step // config["save_every"])
                 torch.cuda.empty_cache()
-        if batch_idx >= config["total_steps"]:
+        accumulated_loss = 0.0
+        if update_step >= config["total_steps"]:
             break
+    if USE_WANDB and accelerator.is_main_process:
+        wandb.finish()
 
 
 # Generate
@@ -279,7 +278,7 @@ def generate(iterator, idx):
     tokens, cond_id, cond_mask, tag = next(iterator)
     conditions = {"input_ids": cond_id.to(accelerator.device), "attention_mask": cond_mask.to(accelerator.device)}
     # generate
-    with torch.no_grad() and torch.autocast("cuda", dtype=torch.bfloat16):
+    with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
         mask = ~torch.isnan(tokens)
         tokens = torch.nan_to_num_(tokens, nan=0.0)
         predict = accelerator.unwrap_model(model).generate(

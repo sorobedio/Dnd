@@ -4,7 +4,8 @@ import subprocess
 import sys
 
 file_path = os.path.abspath(sys.argv[1])
-root = os.sep + os.sep.join(__file__.split(os.sep)[1 : __file__.split(os.sep).index("Drag-and-Drop-LLMs") + 1])
+from pathlib import Path
+root = str(Path(__file__).resolve().parents[3])
 sys.path.append(root)
 os.chdir(root)
 os.environ["NUM_PROCESSES"] = "1"
@@ -23,7 +24,7 @@ from workspace.dnd.model import HyperConvDecoderModel_FullCond as Model
 from workspace.dnd.tokenizer import Qwen2505LoRA_Tokenizer2D as Tokenizer
 
 SEED = 999
-DATASET_ROOT = "./data/common_sense_reasoning"
+DATASET_ROOT = os.environ.get("DND_DATASET_ROOT", str(Path(root).parent / "Loradatasets/common_sense_reasoning"))
 CONFIG_ROOT = "./workspace/datasets/common_sense_reasoning"
 COND_ROOT = "./prepare/data"
 SAVE_ROOT = "./generated/common_sense_reasoning"
@@ -91,7 +92,7 @@ def generate(model, loader, dataset, dstag_T, dstag_V):
     # prepare data
     for idx, (tokens, cond_id, cond_mask, tag) in enumerate(loader):
         # generate
-        with torch.no_grad() and torch.autocast("cuda", dtype=torch.bfloat16):
+        with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
             mask = ~torch.isnan(tokens)
             tokens = torch.nan_to_num_(tokens, nan=0.0)
             conditions = {
@@ -234,10 +235,10 @@ def main(eval_dataset: str, test_dataset: str):
             "--adapter_name_or_path", f"{TEST_ROOT}/{eval_dataset}T_on_{test_dataset}V_{i}",
         ]
         
-        subprocess.run(["python", "scripts/vllm_infer.py"] + args)
+        subprocess.run([sys.executable, "scripts/common_sense_vllm_infer.py"] + args, check=True)
         subprocess.run(
-            ["python", "scripts/calculate_acc.py"]
-            + ["--file", f"{RES_ROOT}/{test_dataset}/{eval_dataset}T_on_{test_dataset}V_{i}.jsonl"]
+            [sys.executable, "scripts/calculate_acc.py"]
+            + ["--file", f"{RES_ROOT}/{test_dataset}/{eval_dataset}T_on_{test_dataset}V_{i}.jsonl"], check=True
         )
         
         import shutil
