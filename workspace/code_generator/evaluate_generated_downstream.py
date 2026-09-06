@@ -1,5 +1,5 @@
 """Compare an original and generated LoRA adapter on a benchmark task."""
-import argparse, json, re
+import argparse, json, re, shutil
 from pathlib import Path
 
 
@@ -30,12 +30,31 @@ def main():
         if row.get('system'): messages.append({'role':'system','content':row['system']})
         messages.append({'role':'user','content':row['prompt']})
         prompts.append(tokenizer.apply_chat_template(messages,tokenize=False,add_generation_prompt=True))
+    staging=Path(args.output).parent / '.adapter_staging'
+    staging.mkdir(parents=True,exist_ok=True)
+    adapter_paths={}
+    for name,path in [('original',Path(args.original)),('generated',Path(args.generated))]:
+        if path.is_dir():
+            adapter_paths[name]=str(path)
+            continue
+        if not path.is_file(): raise FileNotFoundError(path)
+        folder=staging/name; folder.mkdir(parents=True,exist_ok=True)
+        shutil.copyfile(path,folder/'adapter_model.safetensors')
+        sibling=path.parent/'adapter_config.json'
+        if sibling.exists():
+            shutil.copyfile(sibling,folder/'adapter_config.json')
+        else:
+            (folder/'adapter_config.json').write_text(json.dumps(dict(
+                peft_type='LORA',task_type='CAUSAL_LM',r=8,lora_alpha=16,
+                lora_dropout=0.0,bias='none',target_modules=['down_proj','v_proj','gate_proj','o_proj','up_proj','k_proj','q_proj'],
+                base_model_name_or_path=args.base_model),indent=2)+'\n')
+        adapter_paths[name]=str(folder)
     llm=LLM(model=args.base_model,enable_lora=True,max_lora_rank=8,max_loras=2,
             max_cpu_loras=2,gpu_memory_utilization=.25,dtype='bfloat16',seed=999)
     sampling=SamplingParams(temperature=0,max_tokens=args.max_new_tokens)
     outputs={}
     for name,path in [('original',args.original),('generated',args.generated)]:
-        result=llm.generate(prompts,sampling,lora_request=LoRARequest(name,1,path))
+        result=llm.generate(prompts,sampling,lora_request=LoRARequest(name,1,adapter_paths[name]))
         predictions=[]
         for i,out in enumerate(result):
             text=out.outputs[0].text; answer=parse_answer(text,args.task); label=parse_answer(rows[i].get('response',''),args.task)
