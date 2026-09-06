@@ -307,7 +307,11 @@ def evaluate_heldout(args):
     source = torch.load(args.codes, map_location='cpu', weights_only=True)
     pairs = [(i, checkpoint_step(e['path'])) for i,e in enumerate(source['entries']) if e['dataset']==args.task]
     if not pairs: raise ValueError(f'No {args.task} checkpoint in codes')
-    i, step = max(pairs, key=lambda x:x[1])
+    if args.index is None:
+        i, step = max(pairs, key=lambda x:x[1])
+    else:
+        if args.index < 0 or args.index >= len(pairs): raise IndexError(f'{args.task} index must be 0..{len(pairs)-1}')
+        i, step = pairs[args.index]
     prompts = read_prompts(args.prompts); n=state['metadata']['num_prompts']; rng=random.Random(args.seed)
     chosen=rng.sample(range(len(prompts)),n) if len(prompts)>=n else [j%len(prompts) for j in range(n)]
     device=resolve_device(args.device)
@@ -346,7 +350,7 @@ def main():
     gen.add_argument('--temperature',type=float,default=0.);gen.add_argument('--top-k',type=int,default=0);gen.add_argument('--seed',type=int,default=999)
     ev=sub.add_parser('evaluate-heldout')
     ev.add_argument('--model',required=True);ev.add_argument('--codes',required=True);ev.add_argument('--prompts',required=True)
-    ev.add_argument('--task',required=True);ev.add_argument('--output',required=True);ev.add_argument('--seed',type=int,default=999)
+    ev.add_argument('--task',required=True);ev.add_argument('--index',type=int);ev.add_argument('--output',required=True);ev.add_argument('--seed',type=int,default=999)
     for cmd in (prep,tr,gen,ev):cmd.add_argument('--device',default='cuda:0')
     args=p.parse_args();torch.set_num_threads(8)
     command = {'evaluate-heldout': 'evaluate_heldout'}.get(args.command, args.command)
