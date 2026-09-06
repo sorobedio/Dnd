@@ -302,6 +302,28 @@ def generate(args):
                                   output_dir=args.decode_dir,limit=None,device=args.device))
 
 
+def evaluate_heldout(args):
+    state = torch.load(args.model, map_location='cpu', weights_only=True)
+    source = torch.load(args.codes, map_location='cpu', weights_only=True)
+    pairs = [(i, checkpoint_step(e['path'])) for i,e in enumerate(source['entries']) if e['dataset']==args.task]
+    if not pairs: raise ValueError(f'No {args.task} checkpoint in codes')
+    i, step = max(pairs, key=lambda x:x[1])
+    prompts = read_prompts(args.prompts); n=state['metadata']['num_prompts']; rng=random.Random(args.seed)
+    chosen=rng.sample(range(len(prompts)),n) if len(prompts)>=n else [j%len(prompts) for j in range(n)]
+    device=resolve_device(args.device)
+    emb=embed([prompts[j] for j in chosen],state['metadata']['encoder'],device)[None].to(device)
+    model=PrefixCodeGPT(**state['model_config']).to(device); model.load_state_dict(state['model'])
+    with autocast(device): generated=model.generate(emb,torch.tensor([step],device=device))
+    target=source['codes'][i:i+1].long()
+    result=dict(task=args.task,checkpoint_step=step,checkpoint_path=source['entries'][i]['path'],
+      reference_correct=bool(generated[0,0].cpu()==target[0,0]),
+      code_accuracy=float((generated[:,1:].cpu()==target[:,1:]).float().mean()),
+      exact_sequence_match=bool(torch.equal(generated.cpu(),target)),prompt_count=n,seed=args.seed,
+      note='Fully autoregressive generation; target codes used only for comparison.')
+    atomic_save(dict(result=result,generated_codes=generated.cpu().to(torch.int32),target_codes=target.to(torch.int32)),args.output)
+    print(json.dumps(result,indent=2),flush=True)
+
+
 def main():
     p=argparse.ArgumentParser(__doc__);sub=p.add_subparsers(dest='command',required=True)
     prep=sub.add_parser('prepare')
@@ -322,7 +344,10 @@ def main():
     gen.add_argument('--task',required=True);gen.add_argument('--checkpoint-step',type=int);gen.add_argument('--output',required=True)
     gen.add_argument('--encoder');gen.add_argument('--decode-dir');gen.add_argument('--vq-model')
     gen.add_argument('--temperature',type=float,default=0.);gen.add_argument('--top-k',type=int,default=0);gen.add_argument('--seed',type=int,default=999)
-    for cmd in (prep,tr,gen):cmd.add_argument('--device',default='cuda:0')
+    ev=sub.add_parser('evaluate-heldout')
+    ev.add_argument('--model',required=True);ev.add_argument('--codes',required=True);ev.add_argument('--prompts',required=True)
+    ev.add_argument('--task',required=True);ev.add_argument('--output',required=True);ev.add_argument('--seed',type=int,default=999)
+    for cmd in (prep,tr,gen,ev):cmd.add_argument('--device',default='cuda:0')
     args=p.parse_args();torch.set_num_threads(8);globals()[args.command](args)
 
 
