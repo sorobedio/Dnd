@@ -1,0 +1,218 @@
+{
+  "baseline": {
+    "train_weighted_mse": 0.13542334942328635,
+    "train_mse": 0.08894027895789124,
+    "train_physical_relative_mse": 26.187838708717873,
+    "per_task": {
+      "ARC-e": {
+        "n": 50,
+        "weighted_mse": 0.005508610282558948,
+        "mse": 0.0032811621972359717,
+        "physical_relative_mse": 0.11458947144448757
+      },
+      "BoolQ": {
+        "n": 51,
+        "weighted_mse": 0.007960213635883787,
+        "mse": 0.004564027637517189,
+        "physical_relative_mse": 0.11598915036986857
+      },
+      "PIQA": {
+        "n": 51,
+        "weighted_mse": 0.009877453905110266,
+        "mse": 0.006285649139945414,
+        "physical_relative_mse": 0.3190237134695053
+      },
+      "HellaSwag": {
+        "n": 51,
+        "weighted_mse": 0.010005874522760803,
+        "mse": 0.006000032169086968,
+        "physical_relative_mse": 0.24468612933860107
+      },
+      "ARC-c": {
+        "n": 51,
+        "weighted_mse": 0.6412172469438291,
+        "mse": 0.42289093312095194,
+        "physical_relative_mse": 129.63366489784391
+      }
+    }
+  },
+  "initial_reference": {
+    "train_weighted_mse": 0.007154789573364473,
+    "train_mse": 0.0041587377103654245,
+    "train_physical_relative_mse": 0.005950527516602517,
+    "per_task": {
+      "ARC-e": {
+        "n": 50,
+        "weighted_mse": 0.005347476883325725,
+        "mse": 0.003093083801213652,
+        "physical_relative_mse": 0.004303487848956138
+      },
+      "BoolQ": {
+        "n": 51,
+        "weighted_mse": 0.007827390419027093,
+        "mse": 0.00438879969685028,
+        "physical_relative_mse": 0.006218729613750589
+      },
+      "PIQA": {
+        "n": 51,
+        "weighted_mse": 0.010293147481028355,
+        "mse": 0.006259086934447873,
+        "physical_relative_mse": 0.009447801575137704
+      },
+      "HellaSwag": {
+        "n": 51,
+        "weighted_mse": 0.01047097577476034,
+        "mse": 0.0059899702239051165,
+        "physical_relative_mse": 0.008357148663159095
+      },
+      "ARC-c": {
+        "n": 51,
+        "weighted_mse": 0.0017995198049546017,
+        "mse": 0.001041852720720949,
+        "physical_relative_mse": 0.0013931749865650107
+      }
+    }
+  },
+  "final": {
+    "train_weighted_mse": 0.0015853034710744396,
+    "train_mse": 0.0009367658494165952,
+    "train_physical_relative_mse": 0.0012785551695319948,
+    "per_task": {
+      "ARC-e": {
+        "n": 50,
+        "weighted_mse": 0.0014423829643055797,
+        "mse": 0.0008540603233268485,
+        "physical_relative_mse": 0.001153915126924403
+      },
+      "BoolQ": {
+        "n": 51,
+        "weighted_mse": 0.001638313166468459,
+        "mse": 0.0009374715959625866,
+        "physical_relative_mse": 0.0012973866884267943
+      },
+      "PIQA": {
+        "n": 51,
+        "weighted_mse": 0.002259475754245239,
+        "mse": 0.0013793280499978173,
+        "physical_relative_mse": 0.0018940153143679102
+      },
+      "HellaSwag": {
+        "n": 51,
+        "weighted_mse": 0.001823597257801642,
+        "mse": 0.0010678601672635506,
+        "physical_relative_mse": 0.0014473887904565416
+      },
+      "ARC-c": {
+        "n": 51,
+        "weighted_mse": 0.0007599458496734573,
+        "mse": 0.0004434874335500211,
+        "physical_relative_mse": 0.0005976260050802547
+      }
+    }
+  },
+  "best_step": 3000,
+  "training": {
+    "initialize_from": "/data-vol1/soro/Projects/Dnd/outputs/vqvae_arc_c/last.pt",
+    "output_dir": "outputs/vqvae_train_arc_c_residual",
+    "resume": "outputs/vqvae_train_arc_c_residual/last.pt",
+    "steps": 3000,
+    "joint_steps": 2000,
+    "batch_size": 5,
+    "learning_rate": 0.0001,
+    "physical_weight": 0.01,
+    "commitment": 0.25,
+    "eval_every": 250,
+    "save_every": 100,
+    "warmup": 50,
+    "seed": 999,
+    "stop_after": null,
+    "device": "cuda:0",
+    "wandb": true,
+    "encode_after": true,
+    "reference_residual": true
+  },
+  "codes_shape": [
+    254,
+    2561
+  ],
+  "reference_bytes": 111696000,
+  "model_sha256": "5a1dfefcfb40488f11119b537185c3dd7aca4687121f5b12e636ac626f28603f",
+  "weight_audit": {
+    "scope": "Latest checkpoint per task, all confirmed training members",
+    "model": "/data-vol1/soro/Projects/Dnd/outputs/vqvae_train_arc_c_residual/best_train_reconstruction.pt",
+    "model_sha256": "5a1dfefcfb40488f11119b537185c3dd7aca4687121f5b12e636ac626f28603f",
+    "model_step": 3000,
+    "tasks": [
+      {
+        "task": "ARC-e",
+        "source": "/data-vol1/soro/Projects/Dnd/Loradatasets/common_sense_reasoning/ARC-e/220.safetensors",
+        "old": {
+          "lora_A_relative_l2": 0.04793579374374354,
+          "lora_B_relative_l2": 0.28302441936759576,
+          "delta_BA_relative_l2": 0.3053763948419737
+        },
+        "new": {
+          "lora_A_relative_l2": 0.003625251506023284,
+          "lora_B_relative_l2": 0.042155177190228314,
+          "delta_BA_relative_l2": 0.042432543639029124
+        }
+      },
+      {
+        "task": "BoolQ",
+        "source": "/data-vol1/soro/Projects/Dnd/Loradatasets/common_sense_reasoning/BoolQ/300.safetensors",
+        "old": {
+          "lora_A_relative_l2": 0.05369629261618661,
+          "lora_B_relative_l2": 0.4279578723233026,
+          "delta_BA_relative_l2": 0.446487711966887
+        },
+        "new": {
+          "lora_A_relative_l2": 0.006618014922485611,
+          "lora_B_relative_l2": 0.06920339786054402,
+          "delta_BA_relative_l2": 0.06981563135754669
+        }
+      },
+      {
+        "task": "PIQA",
+        "source": "/data-vol1/soro/Projects/Dnd/Loradatasets/common_sense_reasoning/PIQA/215.safetensors",
+        "old": {
+          "lora_A_relative_l2": 0.06420831609107071,
+          "lora_B_relative_l2": 0.6137702859788511,
+          "delta_BA_relative_l2": 0.6318867230114598
+        },
+        "new": {
+          "lora_A_relative_l2": 0.011224455447195669,
+          "lora_B_relative_l2": 0.10195670590383842,
+          "delta_BA_relative_l2": 0.10259429613692435
+        }
+      },
+      {
+        "task": "HellaSwag",
+        "source": "/data-vol1/soro/Projects/Dnd/Loradatasets/common_sense_reasoning/HellaSwag/300.safetensors",
+        "old": {
+          "lora_A_relative_l2": 0.0791723797617314,
+          "lora_B_relative_l2": 0.7664999170477056,
+          "delta_BA_relative_l2": 0.8223335718104161
+        },
+        "new": {
+          "lora_A_relative_l2": 0.009722261048073451,
+          "lora_B_relative_l2": 0.07583847616726544,
+          "delta_BA_relative_l2": 0.077814625272655
+        }
+      },
+      {
+        "task": "ARC-c",
+        "source": "/data-vol1/soro/Projects/Dnd/Loradatasets/common_sense_reasoning/ARC-c/250.safetensors",
+        "old": {
+          "lora_A_relative_l2": 0.9119674391758309,
+          "lora_B_relative_l2": 14.275818144666431,
+          "delta_BA_relative_l2": 8.810835368193853
+        },
+        "new": {
+          "lora_A_relative_l2": 0.0022671045889198016,
+          "lora_B_relative_l2": 0.025526166259830025,
+          "delta_BA_relative_l2": 0.025658772239395368
+        }
+      }
+    ]
+  }
+}

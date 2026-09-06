@@ -53,20 +53,27 @@ cd /data-vol1/soro/Projects/Dnd/Drag-and-Drop-LLMs
 # Record the exact files; optionally precompute token caches (~5.6 GB).
 python -m workspace.vqvae.run prepare --cache
 
-# The launcher always uses Conda dnd and physical GPU 5.
+# The launcher always uses Conda dnd and physical GPU 4.
 bash scripts/common_sense_reasoning/ARC-c/training_vqvae.sh
 ```
 
 The launcher selects the `dnd` environment even if invoked from another Conda
-environment. Physical GPU 5 is exposed as logical `cuda:0`. The data root is
+environment. Physical GPU 4 is exposed as logical `cuda:0`. The data root is
 detected beside the repository or inside it (`Loradatasets/common_sense_reasoning`);
 `--data-root` or `DND_DATASET_ROOT` overrides detection.
+
+The launcher waits until GPU 4 has at least 16 GiB free before importing
+PyTorch or initializing CUDA. It checks every 30 seconds and leaves existing
+jobs running. `VQVAE_MIN_FREE_MIB` and `VQVAE_POLL_SECONDS` configure this
+headroom check; it is not a GPU memory limit or a reservation. A per-output
+lock prevents duplicate queued/running launches. CPU runs and `--help` skip
+the GPU-memory wait.
 
 Defaults: 10,000 optimizer steps, batch size 4 complete adapters, AdamW
 at 2e-4 with cosine decay, and W&B project `DnD-VQVAE` using the existing
 login. Outputs are separate from the DnD run, in `outputs/vqvae_arc_c/`.
 The launcher encodes all 200 training adapters into `train_codes.pt` after
-training finishes. For example, override training settings with
+training finishes, using `best_train_reconstruction.pt`. For example, override training settings with
 `--batch-size 8 --steps 4000`. Do not assume DnD's batch size fits this model.
 
 The first optimizer step, every 100 steps, the final step, and a requested
@@ -75,6 +82,15 @@ every 1,000 steps. Checkpoints include model, EMA codebook, optimizer,
 scheduler, sampler state, and Torch RNG states. Interrupts save after the
 current optimizer step completes. A hard kill or hardware failure can still
 lose steps since the last save. Resume with the same steps/batch/lr settings:
+
+Whenever the observed training minibatch `weighted_mse` strictly improves,
+`best_train_reconstruction.pt` is atomically replaced with a full resumable
+checkpoint. Commitment loss and held-out loss are excluded from this decision.
+The best loss and step are logged and preserved on resume. This is a best
+minibatch loss, not an average over the entire training dataset. Resuming an
+older checkpoint without these fields starts tracking at the next step; it
+cannot recover an unsaved historical best model. Checkpoints record that
+starting step as `best_tracking_start_step`.
 
 ```bash
 bash scripts/common_sense_reasoning/ARC-c/training_vqvae.sh \

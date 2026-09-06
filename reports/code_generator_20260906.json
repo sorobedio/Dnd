@@ -1,0 +1,158 @@
+{
+  "status": "complete",
+  "gpu": 4,
+  "environment": "dnd",
+  "training_steps": 3000,
+  "best_step": 3000,
+  "parameters": 12373248,
+  "training_checkpoints": 254,
+  "tasks": [
+    "ARC-c",
+    "ARC-e",
+    "BoolQ",
+    "HellaSwag",
+    "PIQA"
+  ],
+  "latest_steps": {
+    "ARC-c": 250,
+    "ARC-e": 220,
+    "BoolQ": 300,
+    "HellaSwag": 300,
+    "PIQA": 215
+  },
+  "final_training_evaluation": {
+    "train_eval/loss": 0.1693522041355531,
+    "train_eval/code_ce": 0.1693278267744958,
+    "train_eval/reference_ce": 0.000024377024085943835,
+    "train_eval/code_accuracy": 0.9618833149511983,
+    "train_eval/reference_accuracy": 1
+  },
+  "free_generation_arc_c": {
+    "checkpoint_step": 250,
+    "prompts": 128,
+    "seed": 999,
+    "temperature": 0,
+    "code_index_accuracy": 1,
+    "reference_correct": true,
+    "exact_sequence": true,
+    "adapter_tensors_equal_to_evaluated_vq_reconstruction": true,
+    "downstream_rerun": false
+  },
+  "unique_sequences_by_task": {
+    "ARC-c": 42,
+    "ARC-e": 50,
+    "BoolQ": 51,
+    "HellaSwag": 51,
+    "PIQA": 51
+  },
+  "model": "/data-vol1/soro/Projects/Dnd/outputs/code_generator/best_train.pt",
+  "generated_adapter": "/data-vol1/soro/Projects/Dnd/outputs/code_generator/generated_adapters/ARC-c/250",
+  "wandb": "https://wandb.ai/sorobedio/DnD-CodeGPT/runs/9lf5dqud",
+  "tests": "4 tests passed locally and in dnd; complete generation and decoding verified",
+  "training_curve": [
+    {
+      "step": 10,
+      "train_eval/loss": 7.597432767312358,
+      "train_eval/code_ce": 6.932639024389072,
+      "train_eval/reference_ce": 0.6647937424539581,
+      "train_eval/code_accuracy": 0.004555241205714878,
+      "train_eval/reference_accuracy": 0.7992125984251969
+    },
+    {
+      "step": 250,
+      "train_eval/loss": 4.891906941030908,
+      "train_eval/code_ce": 4.89115919653825,
+      "train_eval/reference_ce": 0.0007477464373443481,
+      "train_eval/code_accuracy": 0.15139487174552257,
+      "train_eval/reference_accuracy": 1
+    },
+    {
+      "step": 500,
+      "train_eval/loss": 3.0132473500694816,
+      "train_eval/code_ce": 3.0129944743133907,
+      "train_eval/reference_ce": 0.0002528820278519017,
+      "train_eval/code_accuracy": 0.43254337536068416,
+      "train_eval/reference_accuracy": 1
+    },
+    {
+      "step": 750,
+      "train_eval/loss": 1.9054363839269624,
+      "train_eval/code_ce": 1.9048733603297257,
+      "train_eval/reference_ce": 0.0005630293204934945,
+      "train_eval/code_accuracy": 0.6018239499077084,
+      "train_eval/reference_accuracy": 1
+    },
+    {
+      "step": 1000,
+      "train_eval/loss": 1.1983165996750509,
+      "train_eval/code_ce": 1.1981933797438313,
+      "train_eval/reference_ce": 0.000123220719429151,
+      "train_eval/code_accuracy": 0.7271192308485978,
+      "train_eval/reference_accuracy": 1
+    },
+    {
+      "step": 1250,
+      "train_eval/loss": 0.8080425072373367,
+      "train_eval/code_ce": 0.8079636822065969,
+      "train_eval/reference_ce": 0.00007883048197896198,
+      "train_eval/code_accuracy": 0.7996386050239322,
+      "train_eval/reference_accuracy": 1
+    },
+    {
+      "step": 1500,
+      "train_eval/loss": 0.5824962528202478,
+      "train_eval/code_ce": 0.5824359010054371,
+      "train_eval/reference_ce": 0.000060361081745299535,
+      "train_eval/code_accuracy": 0.8438868879333256,
+      "train_eval/reference_accuracy": 1
+    },
+    {
+      "step": 1750,
+      "train_eval/loss": 0.4547928392183124,
+      "train_eval/code_ce": 0.4547466639224,
+      "train_eval/reference_ce": 0.000046180130786209284,
+      "train_eval/code_accuracy": 0.8689053420006759,
+      "train_eval/reference_accuracy": 1
+    },
+    {
+      "step": 2000,
+      "train_eval/loss": 0.3396902247442035,
+      "train_eval/code_ce": 0.3396513160523467,
+      "train_eval/reference_ce": 0.0000389082714267658,
+      "train_eval/code_accuracy": 0.899684743618402,
+      "train_eval/reference_accuracy": 1
+    },
+    {
+      "step": 2250,
+      "train_eval/loss": 0.2679153924851906,
+      "train_eval/code_ce": 0.2678821246455035,
+      "train_eval/reference_ce": 0.000033267217363537046,
+      "train_eval/code_accuracy": 0.9214720852731719,
+      "train_eval/reference_accuracy": 1
+    },
+    {
+      "step": 2500,
+      "train_eval/loss": 0.21621460397177794,
+      "train_eval/code_ce": 0.21618543289543138,
+      "train_eval/reference_ce": 0.00002917057295915612,
+      "train_eval/code_accuracy": 0.942825739308605,
+      "train_eval/reference_accuracy": 1
+    },
+    {
+      "step": 2750,
+      "train_eval/loss": 0.18775824563005777,
+      "train_eval/code_ce": 0.18772902973289565,
+      "train_eval/reference_ce": 0.000029215484609603735,
+      "train_eval/code_accuracy": 0.9544660575746551,
+      "train_eval/reference_accuracy": 1
+    },
+    {
+      "step": 3000,
+      "train_eval/loss": 0.1693522041355531,
+      "train_eval/code_ce": 0.1693278267744958,
+      "train_eval/reference_ce": 0.000024377024085943835,
+      "train_eval/code_accuracy": 0.9618833149511983,
+      "train_eval/reference_accuracy": 1
+    }
+  ]
+}

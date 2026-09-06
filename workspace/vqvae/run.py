@@ -23,14 +23,14 @@ def atomic_save(value, path):
     os.replace(temporary, path)
 
 
-def autocast(device):
-    return (torch.autocast("cuda", dtype=torch.bfloat16) if device.type == "cuda"
+def autocast(device, enabled=True):
+    return (torch.autocast("cuda", dtype=torch.bfloat16) if device.type == "cuda" and enabled
             else contextlib.nullcontext())
 
 
 def resolve_device(name):
     device = torch.device(name)
-    # CUDA_VISIBLE_DEVICES=5 maps physical GPU 5 to logical cuda:0.
+    # CUDA_VISIBLE_DEVICES=4 maps physical GPU 4 to logical cuda:0.
     if device.type == "cuda" and device.index is None:
         device = torch.device("cuda", 0)
     return device
@@ -115,6 +115,9 @@ def train(args):
         optimizer.load_state_dict(state["optimizer"])
         scheduler.load_state_dict(state["scheduler"])
         step = state["step"]
+    best_train_reconstruction = state.get("best_train_reconstruction", float("inf")) if state else float("inf")
+    best_train_step = state.get("best_train_step") if state else None
+    best_tracking_start_step = state.get("best_tracking_start_step", step + 1) if state else 1
     run = None
     if args.wandb:
         import wandb
@@ -140,16 +143,23 @@ def train(args):
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, request_stop)
 
-    def save():
+    def save(save_latest=True, save_best=False):
         snapshot = dict(version=1, model_config=model.config, model=model.state_dict(),
                         optimizer=optimizer.state_dict(), scheduler=scheduler.state_dict(), step=step,
                         training=vars(args), manifest=manifest, sampler_rng=sampler.get_state(),
                         torch_rng=torch.get_rng_state(),
                         cuda_rng=torch.cuda.get_rng_state_all() if device.type == "cuda" else [],
-                        wandb_id=run.id if run else None)
-        atomic_save(snapshot, output / "last.pt")
-        if step % 1000 == 0:
-            atomic_save(snapshot, output / f"step_{step:06d}.pt")
+                        wandb_id=run.id if run else None,
+                        best_train_reconstruction=best_train_reconstruction,
+                        best_train_step=best_train_step, best_tracking_start_step=best_tracking_start_step)
+        if save_latest:
+            atomic_save(snapshot, output / "last.pt")
+            if step % 1000 == 0:
+                atomic_save(snapshot, output / f"step_{step:06d}.pt")
+        if save_best:
+            atomic_save(snapshot, output / "best_train_reconstruction.pt")
+            print(f"Saved best training reconstruction: step={step}, "
+                  f"weighted_mse={best_train_reconstruction:.8f}", flush=True)
 
     print(f"Train: {len(data)} complete checkpoints; held out: {len(held_out)}; "
           f"batch={args.batch_size}; codes/checkpoint=2560; device={device}", flush=True)
@@ -182,14 +192,21 @@ def train(args):
                 metrics["peak_gpu_gib"] = torch.cuda.max_memory_allocated() / 2**30
             if step % args.eval_every == 0 or step == args.steps:
                 metrics.update(evaluate(model, held_out, weights, device, args.eval_samples))
+            improved = metrics["weighted_mse"] < best_train_reconstruction
+            if improved:
+                best_train_reconstruction = metrics["weighted_mse"]
+                best_train_step = step
+            metrics.update(best_train_reconstruction=best_train_reconstruction,
+                           best_train_step=best_train_step)
             print(json.dumps(metrics), flush=True)
             metrics_file.write(json.dumps(metrics) + "\n")
             metrics_file.flush()
             if run:
                 run.log(metrics, step=step)
             stopping = stop_requested or (args.stop_after and step >= args.stop_after)
-            if step == 1 or step % args.save_every == 0 or step == args.steps or stopping:
-                save()
+            save_latest = step == 1 or step % args.save_every == 0 or step == args.steps or stopping
+            if save_latest or improved:
+                save(save_latest=save_latest, save_best=improved)
             if stopping:
                 break
     if run:
@@ -200,7 +217,8 @@ def train(args):
         del optimizer, scheduler, model
         if device.type == "cuda":
             torch.cuda.empty_cache()
-        encode(argparse.Namespace(model=str(output / "last.pt"), output=str(output / "train_codes.pt"),
+        best_path = output / "best_train_reconstruction.pt"
+        encode(argparse.Namespace(model=str(best_path if best_path.exists() else output / "last.pt"), output=str(output / "train_codes.pt"),
                                   split="train", limit=None, device=args.device))
 
 
@@ -209,6 +227,10 @@ def load_model(path, device):
     model = LoRAVQVAE(**state["model_config"])
     model.load_state_dict(state["model"])
     model.to(device).eval()
+    model.requires_float32 = state['manifest'].get('tokenization_dtype') == 'float32'
+    if model.requires_float32:
+        torch.set_float32_matmul_precision('highest')
+        torch.backends.cudnn.allow_tf32 = False
     return model, state["manifest"], state["step"]
 
 
@@ -227,7 +249,7 @@ def encode(args):
     for i in range(number):
         if weight_schema(dataset.entries[i]["path"]) != schema:
             raise ValueError("Adapter structures differ; cannot share a decoding schema")
-        with autocast(device):
+        with autocast(device, enabled=not model.requires_float32):
             indices = model.encode(dataset[i][None].to(device))
         codes.append(indices[0].cpu().to(torch.int32))
         print(f"Encoded complete adapter {i + 1}/{number}", flush=True)
@@ -254,12 +276,14 @@ def decode(args):
         destination = folder / "adapter_model.safetensors"
         if destination.exists():
             raise FileExistsError(destination)
-        with autocast(device):
+        with autocast(device, enabled=not model.requires_float32):
             tokens = model.decode(encoded["codes"][i:i + 1].to(device))
         weights = unpack_tokens(tokens[0], encoded["schema"])
         save_file(weights, str(destination))
         config = json.loads((ROOT / "configs/Qwen0.5/adapter_config.json").read_text())
-        config["base_model_name_or_path"] = str(ROOT / "models/Qwen2.5-0.5B-Instruct")
+        candidates = [ROOT / 'models/Qwen2.5-0.5B-Instruct',
+                      ROOT / 'Drag-and-Drop-LLMs/models/Qwen2.5-0.5B-Instruct']
+        config["base_model_name_or_path"] = str(next((p for p in candidates if (p / 'config.json').exists()), candidates[0]))
         (folder / "adapter_config.json").write_text(json.dumps(config, indent=2))
         print(f"Decoded complete adapter {i + 1}/{number}: {folder}", flush=True)
 

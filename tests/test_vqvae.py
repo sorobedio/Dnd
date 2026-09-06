@@ -10,9 +10,16 @@ import torch
 from workspace.vqvae.model import LoRAVQVAE, reconstruction_loss
 from workspace.vqvae.data import build_manifest, dnd_settings
 from workspace.vqvae.run import resolve_device
+from workspace.vqvae.launch import wait_for_memory
 
 
 class VQVAETest(unittest.TestCase):
+    def test_waits_for_memory_before_returning(self):
+        with patch("workspace.vqvae.launch.free_memory_mib", side_effect=[319, 8000, 20000]), \
+             patch("workspace.vqvae.launch.time.sleep") as sleep, patch("builtins.print"):
+            wait_for_memory(16384, 30)
+        self.assertEqual(sleep.call_count, 2)
+
     def test_bare_cuda_resolves_to_explicit_visible_device(self):
         self.assertEqual(resolve_device("cuda"), torch.device("cuda:0"))
         self.assertEqual(resolve_device("cuda:1"), torch.device("cuda:1"))

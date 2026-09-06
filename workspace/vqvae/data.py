@@ -89,8 +89,8 @@ def importance_weights(manifest):
     return weights
 
 
-def read_weights(path, raw=False):
-    weights = {k: v.to(torch.bfloat16) for k, v in load_file(str(path), device="cpu").items()}
+def read_weights(path, raw=False, dtype=torch.bfloat16):
+    weights = {k: v.to(dtype) for k, v in load_file(str(path), device="cpu").items()}
     if not raw:
         weights = DnDReader.post_process(weights)
     key = DnDReader.sort_key_raw if raw else DnDReader.sort_key
@@ -100,6 +100,7 @@ def read_weights(path, raw=False):
 class WholeLoRADataset(Dataset):
     def __init__(self, manifest, split, cache_dir=None):
         self.entries = [e for e in manifest["entries"] if e["split"] == split]
+        self.dtype = torch.float32 if manifest.get("tokenization_dtype") == "float32" else torch.bfloat16
         self.tokenizer = Qwen2505LoRA_Tokenizer2D(token_size=(10, 130))
         self.cache_dir = Path(cache_dir) if cache_dir else None
         if self.cache_dir:
@@ -108,6 +109,8 @@ class WholeLoRADataset(Dataset):
             (ROOT / "workspace/dnd/tokenizer/tokenizer.py").read_bytes()
             + (ROOT / "workspace/dnd/tokenizer/register.py").read_bytes()
         ).hexdigest()[:12]
+        if self.dtype == torch.float32:
+            self.tokenizer_id += '_float32'
         if not self.entries:
             raise ValueError(f"No entries for split {split}")
 
@@ -121,7 +124,7 @@ class WholeLoRADataset(Dataset):
                  if self.cache_dir else None)
         if cache and cache.exists():
             return torch.load(cache, map_location="cpu", weights_only=True)
-        tokens, _ = self.tokenizer.tokenize(read_weights(self.entries[index]["path"]))
+        tokens, _ = self.tokenizer.tokenize(read_weights(self.entries[index]["path"], dtype=self.dtype))
         if tuple(tokens.shape) != (4296, 10, 130) or torch.isinf(tokens).any():
             raise ValueError(f"Unexpected tokens for {self.entries[index]['path']}")
         if cache:

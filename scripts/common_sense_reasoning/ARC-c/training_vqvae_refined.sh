@@ -7,4 +7,4 @@ export CUDA_VISIBLE_DEVICES=4
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
 exec "${CONDA_EXE:-conda}" run --no-capture-output -n dnd \
-    python -m workspace.vqvae.launch "$@"
+    python -m workspace.vqvae.launch --reconstruction "$@"
