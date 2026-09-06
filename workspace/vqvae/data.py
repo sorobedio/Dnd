@@ -18,6 +18,14 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "workspace/main/tasks/common_sense_reasoning/train_qwen0.5lora_ARC-c.py"
 
 
+def default_data_root():
+    if os.environ.get("DND_DATASET_ROOT"):
+        return Path(os.environ["DND_DATASET_ROOT"])
+    candidates = [ROOT.parent / "Loradatasets/common_sense_reasoning",
+                  ROOT / "Loradatasets/common_sense_reasoning"]
+    return next((path for path in candidates if path.is_dir()), candidates[0])
+
+
 def sha256(path):
     digest = hashlib.sha256()
     with open(path, "rb") as stream:

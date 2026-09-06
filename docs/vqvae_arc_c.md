@@ -53,9 +53,14 @@ cd /data-vol1/soro/Projects/Dnd/Drag-and-Drop-LLMs
 # Record the exact files; optionally precompute token caches (~5.6 GB).
 python -m workspace.vqvae.run prepare --cache
 
-# Choose an available GPU explicitly. This example preserves the requested GPU 5.
-CUDA_VISIBLE_DEVICES=5 bash scripts/common_sense_reasoning/ARC-c/training_vqvae.sh
+# The launcher always uses Conda dnd and physical GPU 5.
+bash scripts/common_sense_reasoning/ARC-c/training_vqvae.sh
 ```
+
+The launcher selects the `dnd` environment even if invoked from another Conda
+environment. Physical GPU 5 is exposed as logical `cuda:0`. The data root is
+detected beside the repository or inside it (`Loradatasets/common_sense_reasoning`);
+`--data-root` or `DND_DATASET_ROOT` overrides detection.
 
 Defaults: 10,000 optimizer steps, batch size 4 complete adapters, AdamW
 at 2e-4 with cosine decay, and W&B project `DnD-VQVAE` using the existing
@@ -72,7 +77,7 @@ current optimizer step completes. A hard kill or hardware failure can still
 lose steps since the last save. Resume with the same steps/batch/lr settings:
 
 ```bash
-CUDA_VISIBLE_DEVICES=5 bash scripts/common_sense_reasoning/ARC-c/training_vqvae.sh \
+bash scripts/common_sense_reasoning/ARC-c/training_vqvae.sh \
   --resume outputs/vqvae_arc_c/last.pt
 ```
 

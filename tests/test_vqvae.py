@@ -9,9 +9,15 @@ import torch
 
 from workspace.vqvae.model import LoRAVQVAE, reconstruction_loss
 from workspace.vqvae.data import build_manifest, dnd_settings
+from workspace.vqvae.run import resolve_device
 
 
 class VQVAETest(unittest.TestCase):
+    def test_bare_cuda_resolves_to_explicit_visible_device(self):
+        self.assertEqual(resolve_device("cuda"), torch.device("cuda:0"))
+        self.assertEqual(resolve_device("cuda:1"), torch.device("cuda:1"))
+        self.assertEqual(resolve_device("cpu"), torch.device("cpu"))
+
     def setUp(self):
         torch.manual_seed(19)
         torch.set_num_threads(2)

@@ -11,7 +11,7 @@ import torch
 from safetensors.torch import save_file
 
 from .data import (ROOT, WholeLoRADataset, build_manifest, importance_weights,
-                   sha256, unpack_tokens, validate_manifest, weight_schema)
+                   sha256, unpack_tokens, validate_manifest, weight_schema, default_data_root)
 from .model import LoRAVQVAE, reconstruction_loss
 
 
@@ -26,6 +26,14 @@ def atomic_save(value, path):
 def autocast(device):
     return (torch.autocast("cuda", dtype=torch.bfloat16) if device.type == "cuda"
             else contextlib.nullcontext())
+
+
+def resolve_device(name):
+    device = torch.device(name)
+    # CUDA_VISIBLE_DEVICES=5 maps physical GPU 5 to logical cuda:0.
+    if device.type == "cuda" and device.index is None:
+        device = torch.device("cuda", 0)
+    return device
 
 
 def manifest_for(args):
@@ -79,7 +87,7 @@ def train(args):
     if min(args.steps, args.batch_size, args.eval_samples, args.eval_every, args.save_every) < 1:
         raise ValueError("steps, batch size, evaluation counts, and save intervals must be positive")
     torch.manual_seed(args.seed)
-    device = torch.device(args.device)
+    device = resolve_device(args.device)
     if device.type == "cuda":
         torch.cuda.set_device(device)
         torch.cuda.manual_seed_all(args.seed)
@@ -206,7 +214,7 @@ def load_model(path, device):
 
 @torch.no_grad()
 def encode(args):
-    device = torch.device(args.device)
+    device = resolve_device(args.device)
     checkpoint_hash = sha256(args.model)
     model, manifest, step = load_model(args.model, device)
     validate_manifest(manifest)
@@ -233,7 +241,7 @@ def encode(args):
 
 @torch.no_grad()
 def decode(args):
-    device = torch.device(args.device)
+    device = resolve_device(args.device)
     encoded = torch.load(args.codes, map_location="cpu", weights_only=True)
     if sha256(args.model) != encoded["model_sha256"]:
         raise ValueError("Codes require the exact model/codebook checkpoint used to encode them")
@@ -262,7 +270,7 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("prepare", "train"):
         p = sub.add_parser(name)
-        p.add_argument("--data-root", default=str(ROOT.parent / "Loradatasets/common_sense_reasoning"))
+        p.add_argument("--data-root", default=str(default_data_root()))
         p.add_argument("--output-dir", default=str(ROOT / "outputs/vqvae_arc_c"))
         if name == "prepare":
             p.add_argument("--cache", action="store_true")
