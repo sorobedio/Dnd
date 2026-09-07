@@ -7,6 +7,7 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
+export DND_EXTRACTOR="$REPO_ROOT/Drag-and-Drop-LLMs/models/all-MiniLM-L12-v2"
 
 # The pretrained DnD checkpoint was trained on ARC-e, BoolQ, PIQA, and HellaSwag.
 # ARC-c is therefore the explicitly held-out target; the other tasks are useful

@@ -28,7 +28,9 @@ DATASET_ROOT = os.environ.get("DND_DATASET_ROOT", str(Path(root).parent / "Lorad
 CONFIG_ROOT = "./workspace/datasets/common_sense_reasoning"
 COND_ROOT = "./prepare/data"
 SAVE_ROOT = "./generated/common_sense_reasoning"
-extractor = "./models/all-MiniLM-L12-v2"
+extractor = os.environ.get("DND_EXTRACTOR", "./models/all-MiniLM-L12-v2")
+if not os.path.isdir(extractor):
+    extractor = "./Drag-and-Drop-LLMs/models/all-MiniLM-L12-v2"
 TEST_ROOT = "../test_ckpts"
 CONFIG_PATH = "./configs/Qwen0.5"
 RES_ROOT = "../results/common_sense_reasoning"
