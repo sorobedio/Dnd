@@ -8,3 +8,40 @@ INFO 09-05 14:09:01 [utils.py:615] [shutdown] Process manager: send sigterm to p
 [1.0, 0.5127986348122867]
 
 
+
+----------------------------------------------------------------------------------------
+greedy       0  temperature=0,top_k=0        55.80%      55.97%      +0.17     99.40%
+greedy       1  temperature=0,top_k=0        55.63%      55.89%      +0.26     99.40%
+greedy       2  temperature=0,top_k=0        55.63%      56.06%      +0.43     99.40%
+greedy       3  temperature=0,top_k=0        55.97%      55.72%      -0.26     99.15%
+greedy       4  temperature=0,top_k=0        55.80%      55.89%      +0.09     99.23%
+greedy       5  temperature=0,top_k=0        55.80%      55.80%      +0.00     99.40%
+greedy       6  temperature=0,top_k=0        55.89%      55.80%      -0.09     99.66%
+greedy       7  temperature=0,top_k=0        55.80%      55.89%      +0.09     99.57%
+greedy       8  temperature=0,top_k=0        55.89%      55.72%      -0.17     99.57%
+greedy       9  temperature=0,top_k=0        55.80%      55.80%      +0.00     99.66%
+topk         0  temperature=0,top_k=8        55.72%      55.80%      +0.09     99.57%
+topk         1  temperature=0,top_k=16       55.63%      55.80%      +0.17     99.49%
+topk         2  temperature=0,top_k=24       55.89%      55.55%      -0.34     99.32%
+topk         3  temperature=0,top_k=32       56.06%      55.72%      -0.34     99.40%
+topk         4  temperature=0,top_k=40       55.89%      55.72%      -0.17     99.57%
+topk         5  temperature=0,top_k=48       55.89%      55.97%      +0.09     99.40%
+topk         6  temperature=0,top_k=56       55.89%      55.80%      -0.09     99.49%
+topk         7  temperature=0,top_k=64       55.80%      55.89%      +0.09     99.57%
+topk         8  temperature=0,top_k=72       55.72%      55.89%      +0.17     99.40%
+topk         9  temperature=0,top_k=80       55.72%      55.72%      +0.00     99.49%
+temperature  0  temperature=0.10             55.89%      55.89%      +0.00     99.57%
+temperature  1  temperature=0.20             55.80%      55.72%      -0.09     99.66%
+temperature  2  temperature=0.30             55.72%      55.63%      -0.09     99.32%
+temperature  3  temperature=0.40             55.89%      55.89%      +0.00     99.23%
+temperature  4  temperature=0.50             55.89%      55.72%      -0.17     99.57%
+temperature  5  temperature=0.60             55.72%      55.97%      +0.26     99.49%
+temperature  6  temperature=0.70             55.72%      55.80%      +0.09     99.66%
+temperature  7  temperature=0.80             55.89%      55.80%      -0.09     99.57%
+temperature  8  temperature=0.90             55.80%      55.55%      -0.26     99.49%
+temperature  9  temperature=1.00             55.89%      55.80%      -0.09     99.74%
+greedy mean                                   55.85%      +0.05
+topk mean                                     55.78%      -0.03
+temperature mean                                  55.78%      -0.04
+
+
