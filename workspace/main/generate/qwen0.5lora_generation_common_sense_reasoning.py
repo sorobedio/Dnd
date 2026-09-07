@@ -32,7 +32,12 @@ _dataset_candidates = [
 ]
 DATASET_ROOT = str(next((p for p in _dataset_candidates if p is not None and p.is_dir()), _dataset_candidates[1]))
 CONFIG_ROOT = "./workspace/datasets/common_sense_reasoning"
-COND_ROOT = "./prepare/data"
+_cond_candidates = [
+    Path(os.environ["DND_COND_ROOT"]) if os.environ.get("DND_COND_ROOT") else None,
+    Path(root) / "prepare/data",
+    Path(root).parent / "prepare/data",
+]
+COND_ROOT = str(next((p for p in _cond_candidates if p is not None and any(p.glob("*_test.json"))), _cond_candidates[1]))
 SAVE_ROOT = "./generated/common_sense_reasoning"
 extractor = os.environ.get("DND_EXTRACTOR", "./models/all-MiniLM-L12-v2")
 if not os.path.isdir(extractor):
