@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import statistics
+import subprocess
 from pathlib import Path
 
 from workspace.vqvae.evaluate_downstream import TASKS, answer, evaluation_data
@@ -277,6 +278,55 @@ def prepare(args):
         raise ValueError("The DnD checkpoint changed while adapters were being generated")
 
 
+def gpu_memory():
+    """Free and total MiB of the visible device, without creating a CUDA context."""
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "0").split(",")[0]
+    try:
+        query = subprocess.run(["nvidia-smi", f"--id={visible}", "--query-gpu=memory.free,memory.total",
+                                "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if query.returncode or not query.stdout.strip():
+        return None
+    return tuple(int(value) for value in query.stdout.strip().split(",")[:2])
+
+
+DEFAULT_UTILIZATION = 0.25
+# vLLM needs headroom beyond its own reservation for the CUDA context and NCCL buffers.
+UTILIZATION_HEADROOM = 0.03
+MAX_UTILIZATION = 0.85
+MIN_UTILIZATION = 0.10
+
+
+def utilization_from_memory(requested, memory):
+    """vLLM reserves a fraction of total memory, so a shared GPU needs the fraction that fits."""
+    if memory is None:
+        if requested is None:
+            return DEFAULT_UTILIZATION, f"no GPU query available, using the default {DEFAULT_UTILIZATION:.0%}"
+        return requested, f"no GPU query available, using the requested {requested:.0%}"
+    free, total = memory
+    available = free / total
+    if requested is not None:
+        if requested > available:
+            raise RuntimeError(
+                f"vLLM wants {requested:.0%} of {total} MiB but only {free} MiB ({available:.0%}) is free. "
+                f"Lower DND_VLLM_MEMORY_UTILIZATION to at most {available - UTILIZATION_HEADROOM:.2f}, "
+                f"or free the GPU.")
+        return requested, f"{free} MiB free of {total} MiB, using the requested {requested:.0%}"
+    fraction = round(min(MAX_UTILIZATION, available - UTILIZATION_HEADROOM), 2)
+    if fraction < MIN_UTILIZATION:
+        raise RuntimeError(
+            f"Only {free} MiB of {total} MiB is free; vLLM needs at least {MIN_UTILIZATION:.0%}. "
+            f"Wait for the GPU to drain, or pass --gpu-memory-utilization to override.")
+    return fraction, f"{free} MiB free of {total} MiB, sized to {fraction:.0%} ({int(fraction * total)} MiB)"
+
+
+def resolve_utilization(requested):
+    fraction, message = utilization_from_memory(requested, gpu_memory())
+    print(f"GPU {os.environ.get('CUDA_VISIBLE_DEVICES', '0')}: {message}", flush=True)
+    return fraction
+
+
 def evaluate(args):
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
@@ -292,7 +342,8 @@ def evaluate(args):
     tokenizer = AutoTokenizer.from_pretrained(record["base_model"])
     engine = LLM(model=record["base_model"], dtype="bfloat16", tensor_parallel_size=1,
                  enable_lora=True, max_lora_rank=8, max_loras=1, max_cpu_loras=16,
-                 max_model_len=4096, max_num_seqs=128, gpu_memory_utilization=args.gpu_memory_utilization,
+                 max_model_len=4096, max_num_seqs=128,
+                 gpu_memory_utilization=resolve_utilization(args.gpu_memory_utilization),
                  enforce_eager=True, seed=SEED)
     sampling = SamplingParams(temperature=0, max_tokens=args.max_new_tokens, seed=SEED)
     results = output / "results.json"
@@ -439,7 +490,8 @@ def main():
     parser.add_argument("--originals", type=int, default=5, help="last original checkpoints per task")
     parser.add_argument("--tasks", nargs="+", default=TASKS, choices=TASKS)
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--gpu-memory-utilization", type=float, default=0.25)
+    parser.add_argument("--gpu-memory-utilization", type=float,
+                        help="fraction of GPU memory for vLLM; sized to what is free by default")
     parser.add_argument("--max-new-tokens", type=int, default=1024)
     parser.add_argument("--limit", type=int, help="score only the first N examples per task")
     parser.add_argument("--markdown", help="report: write the tables to this file")

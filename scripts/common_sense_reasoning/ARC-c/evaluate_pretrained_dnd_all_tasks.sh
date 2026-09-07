@@ -41,9 +41,9 @@ fi
     --device "${DND_DEVICE:-cuda:0}" \
     --tasks "${TASKS[@]}" 2>&1 | tee "$LOG_DIR/dnd_pretrained_prepare.log"
 
-EVALUATE=(--output "$OUTPUT" --tasks "${TASKS[@]}"
-          --max-new-tokens "${DND_MAX_NEW_TOKENS:-1024}"
-          --gpu-memory-utilization "${DND_VLLM_MEMORY_UTILIZATION:-0.25}")
+# vLLM is sized to the memory actually free on the GPU; override only to pin it.
+EVALUATE=(--output "$OUTPUT" --tasks "${TASKS[@]}" --max-new-tokens "${DND_MAX_NEW_TOKENS:-1024}")
+[[ -n "${DND_VLLM_MEMORY_UTILIZATION:-}" ]] && EVALUATE+=(--gpu-memory-utilization "$DND_VLLM_MEMORY_UTILIZATION")
 [[ -n "${DND_LIMIT:-}" ]] && EVALUATE+=(--limit "$DND_LIMIT")
 "${PYTHON[@]}" -m "$MODULE" evaluate "${EVALUATE[@]}" 2>&1 | tee "$LOG_DIR/dnd_pretrained_evaluate.log"
 

@@ -5,7 +5,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from workspace.dnd_downstream.evaluate import (membership, report, select_originals, spread, summarize,
-                                               training_selection)
+                                               training_selection, utilization_from_memory)
 
 SETTINGS = dict(datasets=["ARC-e", "BoolQ"], dataset_tag="ARC-c", real_length=2)
 
@@ -113,3 +113,29 @@ class ReportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UtilizationTests(unittest.TestCase):
+    def test_sizes_to_the_free_memory_with_headroom(self):
+        fraction, message = utilization_from_memory(None, (40960, 81920))
+        self.assertEqual(fraction, 0.47)
+        self.assertIn("40960 MiB free of 81920 MiB", message)
+
+    def test_caps_the_fraction_on_an_idle_gpu(self):
+        self.assertEqual(utilization_from_memory(None, (81000, 81920))[0], 0.85)
+
+    def test_rejects_a_request_that_does_not_fit(self):
+        with self.assertRaises(RuntimeError) as raised:
+            utilization_from_memory(0.6, (20480, 81920))
+        self.assertIn("only 20480 MiB", str(raised.exception))
+
+    def test_honours_a_request_that_fits(self):
+        self.assertEqual(utilization_from_memory(0.2, (20480, 81920))[0], 0.2)
+
+    def test_refuses_a_gpu_with_almost_nothing_free(self):
+        with self.assertRaises(RuntimeError):
+            utilization_from_memory(None, (4096, 81920))
+
+    def test_falls_back_when_the_gpu_cannot_be_queried(self):
+        self.assertEqual(utilization_from_memory(None, None)[0], 0.25)
+        self.assertEqual(utilization_from_memory(0.4, None)[0], 0.4)
