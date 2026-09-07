@@ -8,6 +8,11 @@ export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
 export DND_EXTRACTOR="$REPO_ROOT/Drag-and-Drop-LLMs/models/all-MiniLM-L12-v2"
+DNDR="${DND_REPO_ROOT:-$REPO_ROOT/Drag-and-Drop-LLMs}"
+if [[ ! -f "$DNDR/checkpoints/qwen0.5lora__ARC-c.pth" ]]; then
+  echo "Missing pretrained checkpoint: $DNDR/checkpoints/qwen0.5lora__ARC-c.pth" >&2
+  exit 1
+fi
 
 # The pretrained DnD checkpoint was trained on ARC-e, BoolQ, PIQA, and HellaSwag.
 # ARC-c is therefore the explicitly held-out target; the other tasks are useful
@@ -21,9 +26,8 @@ for task in "${TASKS[@]}"; do
   log="$LOG_DIR/${EVAL_DATASET}_on_${task}.log"
   heldout=false; [[ "$task" == ARC-c ]] && heldout=true
   echo "Evaluating pretrained DnD ${EVAL_DATASET} on ${task}; ARC-c held-out=${heldout}" | tee "$log"
-  python workspace/main/generate/qwen0.5lora_generation_common_sense_reasoning.py \
-    "checkpoints/qwen0.5lora__${EVAL_DATASET}.pth" \
-    --eval_dataset "$EVAL_DATASET" --test_dataset "$task" 2>&1 | tee -a "$log"
+  (cd "$DNDR" && python workspace/main/generate/qwen0.5lora_generation_common_sense_reasoning.py \
+    --eval_dataset "$EVAL_DATASET" --test_dataset "$task") 2>&1 | tee -a "$log"
 done
 
 echo

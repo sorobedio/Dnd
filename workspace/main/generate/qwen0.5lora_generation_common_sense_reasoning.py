@@ -24,7 +24,13 @@ from workspace.dnd.model import HyperConvDecoderModel_FullCond as Model
 from workspace.dnd.tokenizer import Qwen2505LoRA_Tokenizer2D as Tokenizer
 
 SEED = 999
-DATASET_ROOT = os.environ.get("DND_DATASET_ROOT", str(Path(root).parent / "Loradatasets/common_sense_reasoning"))
+_dataset_candidates = [
+    Path(os.environ["DND_DATASET_ROOT"]) if os.environ.get("DND_DATASET_ROOT") else None,
+    Path(root) / "Loradatasets/common_sense_reasoning",
+    Path(root) / "Drag-and-Drop-LLMs/Loradatasets/common_sense_reasoning",
+    Path(root).parent / "Loradatasets/common_sense_reasoning",
+]
+DATASET_ROOT = str(next((p for p in _dataset_candidates if p is not None and p.is_dir()), _dataset_candidates[1]))
 CONFIG_ROOT = "./workspace/datasets/common_sense_reasoning"
 COND_ROOT = "./prepare/data"
 SAVE_ROOT = "./generated/common_sense_reasoning"
