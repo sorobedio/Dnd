@@ -4,7 +4,8 @@ import unittest
 from argparse import Namespace
 from pathlib import Path
 
-from workspace.dnd_downstream.evaluate import (membership, report, select_originals, spread, summarize,
+from workspace.dnd_downstream.evaluate import (membership, pairwise_agreement, report, reusable,
+                                               select_originals, spread, summarize, task_membership,
                                                training_selection, utilization_from_memory)
 
 SETTINGS = dict(datasets=["ARC-e", "BoolQ"], dataset_tag="ARC-c", real_length=2)
@@ -71,14 +72,14 @@ class SummaryTests(unittest.TestCase):
             "original_300": [dict(answer="A"), dict(answer="B")],
         }
         summary = summarize(row, predictions)
-        self.assertAlmostEqual(summary["dnd_mean"], 0.6)
+        self.assertAlmostEqual(summary["generated_mean"], 0.6)
         self.assertAlmostEqual(summary["original_mean"], 0.6)
         self.assertAlmostEqual(summary["delta_percentage_points"], 0.0)
         # dnd_0 matches both answers, dnd_1 matches one of two.
-        self.assertAlmostEqual(summary["dnd_agreement_with_reference"], 0.75)
+        self.assertAlmostEqual(summary["generated_agreement_with_reference"], 0.75)
         self.assertAlmostEqual(summary["original_agreement_with_reference"], 0.5)
-        self.assertAlmostEqual(summary["dnd_relative_l2"], 0.2)
-        self.assertAlmostEqual(summary["dnd_cosine"], 0.8)
+        self.assertAlmostEqual(summary["generated_relative_l2"], 0.2)
+        self.assertAlmostEqual(summary["generated_cosine"], 0.8)
 
     def test_summary_without_other_originals_reports_full_agreement(self):
         row = dict(reference="original_300", variants=[
@@ -91,16 +92,18 @@ class SummaryTests(unittest.TestCase):
 
 class ReportTests(unittest.TestCase):
     def test_report_renders_both_tables(self):
-        task = dict(task="ARC-c", n=1172, reference="original_250", dnd_mean=0.51, dnd_std=0.01,
+        task = dict(task="ARC-c", n=1172, reference="original_250", membership="held_out_task",
+                    generated_mean=0.51, generated_std=0.01, generated_min=0.50, generated_max=0.52,
                     original_mean=0.56, original_std=0.002, delta_percentage_points=-5.0,
-                    dnd_agreement_with_reference=0.6, original_agreement_with_reference=0.99,
+                    sample_agreement=0.7, generated_agreement_with_reference=0.6,
+                    original_agreement_with_reference=0.99,
                     variants=[dict(name="dnd_0", kind="dnd", accuracy=0.51, invalid=0, truncated=0,
                                    relative_l2=0.42, cosine=0.91),
                               dict(name="original_250", kind="original", accuracy=0.56, invalid=1,
-                                   truncated=2, dnd_membership="held_out_task")])
-        result = dict(protocol="Greedy", max_new_tokens=1024, dnd_checkpoint="checkpoints/x.pth",
-                      dnd_train_tasks=["ARC-e"], dnd_held_out_task="ARC-c", samples=5, originals=5,
-                      tasks=[task])
+                                   truncated=2, membership="held_out_task")])
+        result = dict(protocol="Greedy", max_new_tokens=1024, generator="dnd",
+                      generator_checkpoint="checkpoints/x.pth", generator_train_tasks=["ARC-e"],
+                      generator_held_out_task="ARC-c", samples=5, originals=5, tasks=[task])
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             (output / "results.json").write_text(json.dumps(result))
@@ -139,3 +142,103 @@ class UtilizationTests(unittest.TestCase):
     def test_falls_back_when_the_gpu_cannot_be_queried(self):
         self.assertEqual(utilization_from_memory(None, None)[0], 0.25)
         self.assertEqual(utilization_from_memory(0.4, None)[0], 0.4)
+
+
+class GeneratorAgnosticTests(unittest.TestCase):
+    def test_task_membership(self):
+        self.assertEqual(task_membership("ARC-c", ["ARC-e"], "ARC-c"), "held_out_task")
+        self.assertEqual(task_membership("ARC-e", ["ARC-e"], "ARC-c"), "train_task")
+        self.assertEqual(task_membership("OBQA", ["ARC-e"], "ARC-c"), "unseen_task")
+        self.assertEqual(task_membership("ARC-c", ["ARC-e"], ["ARC-c", "OBQA"]), "held_out_task")
+        self.assertEqual(task_membership("PIQA", ["ARC-e"], ["ARC-c", "OBQA"]), "unseen_task")
+
+    def test_pairwise_agreement_over_samples(self):
+        groups = [[dict(answer="A"), dict(answer="B")],
+                  [dict(answer="A"), dict(answer="C")],
+                  [dict(answer="A"), dict(answer="C")]]
+        # Pairs agree on 1/2, 1/2 and 2/2 of the answers.
+        self.assertAlmostEqual(pairwise_agreement(groups), (0.5 + 0.5 + 1.0) / 3)
+        self.assertEqual(pairwise_agreement([groups[0]]), 1.0)
+
+    def test_summary_without_originals_omits_the_paired_columns(self):
+        row = dict(reference=None, variants=[
+            dict(name="code_0", kind="code", accuracy=0.4),
+            dict(name="code_1", kind="code", accuracy=0.6),
+        ])
+        predictions = {"code_0": [dict(answer="A"), dict(answer="B")],
+                       "code_1": [dict(answer="A"), dict(answer="C")]}
+        summary = summarize(row, predictions)
+        self.assertAlmostEqual(summary["generated_mean"], 0.5)
+        self.assertAlmostEqual(summary["sample_agreement"], 0.5)
+        for key in ("original_mean", "delta_percentage_points", "generated_agreement_with_reference",
+                    "generated_relative_l2"):
+            self.assertNotIn(key, summary)
+
+    def test_report_renders_the_unpaired_shape(self):
+        task = dict(task="ARC-c", n=1172, membership="held_out_task", generated_mean=0.31,
+                    generated_std=0.02, generated_min=0.28, generated_max=0.34, sample_agreement=0.55,
+                    variants=[dict(name="code_0", kind="code", accuracy=0.31, invalid=3, truncated=1)])
+        result = dict(protocol="Greedy", max_new_tokens=1024, generator="code",
+                      generator_checkpoint="outputs/x/best_train.pt", generator_train_tasks=["ARC-e"],
+                      generator_held_out_task="ARC-c", samples=5, originals=0, tasks=[task])
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            (output / "results.json").write_text(json.dumps(result))
+            report(Namespace(output=str(output), markdown=str(output / "report.md")))
+            text = (output / "report.md").read_text()
+        self.assertIn("prefix-GPT code generator", text)
+        self.assertIn("The original LoRA checkpoints are not part of this evaluation.", text)
+        self.assertIn("| ARC-c | held_out_task | 1172 | 31.00% ± 2.00 | 28.00%–34.00% | 55.00% |", text)
+        self.assertIn("| ARC-c | code_0 | generated | 31.00% | 3/1172 | 1/1172 |", text)
+        self.assertNotIn("Weight relative L2", text)
+
+
+class ReuseTests(unittest.TestCase):
+    def record(self, **overrides):
+        base = dict(schema=2, generator="dnd", generator_sha256="abc", samples=5, originals=5,
+                    tasks=[dict(task="ARC-c"), dict(task="OBQA")])
+        return {**base, **overrides}
+
+    def test_reuse_keeps_only_the_requested_tasks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "comparison.json"
+            manifest.write_text(json.dumps(self.record()))
+            kept = reusable(manifest, self.record(), ["ARC-c", "ARC-e"])
+            self.assertEqual([t["task"] for t in kept["tasks"]], ["ARC-c"])
+
+    def test_reuse_refuses_a_different_generator_or_layout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "comparison.json"
+            manifest.write_text(json.dumps(self.record(schema=1)))
+            with self.assertRaises(ValueError):
+                reusable(manifest, self.record(), ["ARC-c"])
+            manifest.write_text(json.dumps(self.record(generator_sha256="other")))
+            with self.assertRaises(ValueError):
+                reusable(manifest, self.record(), ["ARC-c"])
+
+    def test_reuse_of_a_missing_manifest_is_empty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(reusable(Path(directory) / "comparison.json", self.record(), ["ARC-c"]), {})
+
+
+class CompatibilityTests(unittest.TestCase):
+    def test_report_reads_a_run_from_before_the_rename(self):
+        task = dict(task="ARC-c", n=1172, reference="original_250", dnd_mean=0.529, dnd_std=0.008,
+                    dnd_min=0.521, dnd_max=0.541, original_mean=0.5606, original_std=0.003,
+                    delta_percentage_points=-3.16, dnd_agreement_with_reference=0.8,
+                    original_agreement_with_reference=0.99, sample_agreement=0.8,
+                    variants=[dict(name="dnd_0", kind="dnd", accuracy=0.526, invalid=0, truncated=0,
+                                   relative_l2=0.4, cosine=0.9),
+                              dict(name="original_250", kind="original", accuracy=0.5606, invalid=0,
+                                   truncated=0, dnd_membership="held_out_task")])
+        result = dict(protocol="Greedy", max_new_tokens=1024, dnd_checkpoint="checkpoints/x.pth",
+                      dnd_train_tasks=["ARC-e", "BoolQ"], dnd_held_out_task="ARC-c",
+                      samples=5, originals=5, tasks=[task])
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            (output / "results.json").write_text(json.dumps(result))
+            report(Namespace(output=str(output), markdown=str(output / "report.md")))
+            text = (output / "report.md").read_text()
+        self.assertIn("DnD hyper-convolution generator", text)
+        self.assertIn("| ARC-c | held_out_task | 1172 | 56.06% ± 0.30 | 52.90% ± 0.80 | -3.16 |", text)
+        self.assertIn("| ARC-c | original_250 | held_out_task |", text)

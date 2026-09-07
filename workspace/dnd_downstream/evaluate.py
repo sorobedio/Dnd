@@ -23,6 +23,8 @@ from pathlib import Path
 from workspace.vqvae.evaluate_downstream import TASKS, answer, evaluation_data
 
 SEED = 999
+# Bumped whenever comparison.json changes shape, so stale runs are refused rather than mixed.
+SCHEMA = 2
 # Only the tensor shapes of this folder are used: it supplies the key names and
 # shapes that detokenization writes the generated values into.
 TEMPLATE_TASK = "ARC-e"
@@ -71,6 +73,8 @@ def resolve_asset(explicit, *relative):
 
 def select_originals(folder, count):
     """The last `count` original LoRA checkpoints, by training step in the filename."""
+    if count <= 0:
+        return []
     files = [p for p in Path(folder).glob("*.safetensors") if p.stem.isdigit()]
     if len(files) < count:
         raise ValueError(f"Need {count} numbered checkpoints in {folder}, found {len(files)}")
@@ -96,6 +100,14 @@ def membership(task, path, settings, selection):
     if task not in settings["datasets"]:
         return "unseen_task"
     return "train" if str(Path(path).resolve()) in selection[task] else "unseen_checkpoint"
+
+
+def task_membership(task, train_tasks, held_out):
+    """How the generator relates to the task itself, independent of any one checkpoint."""
+    held_out = [held_out] if isinstance(held_out, str) else list(held_out)
+    if task in held_out:
+        return "held_out_task"
+    return "train_task" if task in train_tasks else "unseen_task"
 
 
 def spread(values):
@@ -206,6 +218,20 @@ def generate_adapters(model, tokenizer, text_tokenizer, task, data_path, args, o
     return variants
 
 
+def reusable(manifest, record, tasks):
+    """Task entries from an earlier run that the current settings may reuse."""
+    if not Path(manifest).exists():
+        return {}
+    previous = json.loads(Path(manifest).read_text())
+    if previous.get("schema") != record["schema"]:
+        raise ValueError(f"{manifest} uses an older layout; use a fresh --output")
+    for key in ("generator", "generator_sha256", "samples", "originals"):
+        if previous.get(key) != record[key]:
+            raise ValueError(f"{manifest} was built with {key}={previous.get(key)!r}, "
+                             f"now {record[key]!r}; use a fresh --output")
+    return dict(tasks=[t for t in previous["tasks"] if t["task"] in tasks])
+
+
 def prepare(args):
     import accelerate.utils
     import torch
@@ -226,22 +252,15 @@ def prepare(args):
     digest = sha256(args.dnd_checkpoint)
     manifest = output / "comparison.json"
     record = dict(
-        dnd_checkpoint=str(args.dnd_checkpoint), dnd_sha256=digest,
-        dnd_train_tasks=settings["datasets"], dnd_held_out_task=settings["dataset_tag"],
+        schema=SCHEMA, generator="dnd", generator_checkpoint=str(args.dnd_checkpoint), generator_sha256=digest,
+        generator_train_tasks=settings["datasets"], generator_held_out_task=settings["dataset_tag"],
         base_model=str(args.base_model), extractor=str(args.extractor),
         data_root=str(args.data_root), samples=args.samples, originals=args.originals,
         condition_prompts=NUM_TEXTS, seed=SEED,
         selection="last originals by training step; DnD samples differ only in the sampled conditioning prompts",
         tasks=[],
     )
-    if manifest.exists():
-        previous = json.loads(manifest.read_text())
-        if previous["dnd_sha256"] != digest:
-            raise ValueError(f"{manifest} was built from a different DnD checkpoint; use a fresh --output")
-        for key in ("samples", "originals"):
-            if previous[key] != record[key]:
-                raise ValueError(f"{manifest} was built with --{key} {previous[key]}; use a fresh --output")
-        record["tasks"] = [t for t in previous["tasks"] if t["task"] in args.tasks]
+    record.update(reusable(manifest, record, args.tasks))
 
     done = {t["task"] for t in record["tasks"]}
     pending = [t for t in args.tasks if t not in done]
@@ -260,15 +279,17 @@ def prepare(args):
             write_adapter(folder, args.base_model)
             variants.append(dict(name=folder.name, kind="original", step=int(source.stem),
                                  source=str(source), source_sha256=sha256(source),
-                                 dnd_membership=membership(task, source, settings, selection)))
-        reference = max((v for v in variants if v["kind"] == "original"), key=lambda v: v["step"])["name"]
+                                 membership=membership(task, source, settings, selection)))
+        staged = [v for v in variants if v["kind"] == "original"]
+        reference = max(staged, key=lambda v: v["step"])["name"] if staged else None
         for variant in variants:
-            if variant["kind"] == "dnd":
+            if variant["kind"] != "original" and reference:
                 variant.update(weight_distance(
                     output / task / variant["name"] / "adapter_model.safetensors",
                     output / task / reference / "adapter_model.safetensors",
                 ))
         entry = dict(task=task, datafile=str(data_path), data_sha256=sha256(data_path), n=len(prompts),
+                     membership=task_membership(task, settings["datasets"], settings["dataset_tag"]),
                      condition_source=str(data_path), reference=reference, variants=variants)
         record["tasks"].append(entry)
         record["tasks"].sort(key=lambda t: args.tasks.index(t["task"]))
@@ -351,8 +372,10 @@ def evaluate(args):
     if report is None or report.get("max_new_tokens") != args.max_new_tokens or report.get("limit") != args.limit:
         report = dict(protocol="Repository prompts, Qwen chat template, greedy generation, explicit answer extraction",
                       max_new_tokens=args.max_new_tokens, limit=args.limit,
-                      dnd_checkpoint=record["dnd_checkpoint"], dnd_sha256=record["dnd_sha256"],
-                      dnd_train_tasks=record["dnd_train_tasks"], dnd_held_out_task=record["dnd_held_out_task"],
+                      generator=record["generator"], generator_checkpoint=record["generator_checkpoint"],
+                      generator_sha256=record["generator_sha256"],
+                      generator_train_tasks=record["generator_train_tasks"],
+                      generator_held_out_task=record["generator_held_out_task"],
                       samples=record["samples"], originals=record["originals"], tasks=[])
     scored = {t["task"] for t in report["tasks"]}
     request_id = 0
@@ -417,59 +440,117 @@ def agreement(left, right):
     return sum(a["answer"] == b["answer"] for a, b in zip(left, right)) / len(left)
 
 
+def pairwise_agreement(groups):
+    pairs = [(a, b) for index, a in enumerate(groups) for b in groups[index + 1:]]
+    return statistics.fmean(agreement(a, b) for a, b in pairs) if pairs else 1.0
+
+
 def summarize(row, predictions):
-    """Aggregate the DnD samples and the original checkpoints of one task."""
-    groups = {kind: [v for v in row["variants"] if v["kind"] == kind] for kind in ("dnd", "original")}
-    summary = {f"{kind}_{key}": value
-               for kind, variants in groups.items()
-               for key, value in spread(v["accuracy"] for v in variants).items()}
-    summary["delta_percentage_points"] = 100 * (summary["dnd_mean"] - summary["original_mean"])
+    """Aggregate the generated samples of one task, and the originals when they were staged."""
+    generated = [v for v in row["variants"] if v["kind"] != "original"]
+    originals = [v for v in row["variants"] if v["kind"] == "original"]
+    summary = {f"generated_{key}": value for key, value in spread(v["accuracy"] for v in generated).items()}
+    summary["sample_agreement"] = pairwise_agreement([predictions[v["name"]] for v in generated])
+    if all("relative_l2" in v for v in generated):
+        summary["generated_relative_l2"] = statistics.fmean(v["relative_l2"] for v in generated)
+        summary["generated_cosine"] = statistics.fmean(v["cosine"] for v in generated)
+    if not originals:
+        return summary
+    summary.update({f"original_{key}": value for key, value in spread(v["accuracy"] for v in originals).items()})
+    summary["delta_percentage_points"] = 100 * (summary["generated_mean"] - summary["original_mean"])
     reference = predictions[row["reference"]]
-    summary["dnd_agreement_with_reference"] = statistics.fmean(
-        agreement(predictions[v["name"]], reference) for v in groups["dnd"])
-    others = [v for v in groups["original"] if v["name"] != row["reference"]]
+    summary["generated_agreement_with_reference"] = statistics.fmean(
+        agreement(predictions[v["name"]], reference) for v in generated)
+    others = [v for v in originals if v["name"] != row["reference"]]
     summary["original_agreement_with_reference"] = statistics.fmean(
         agreement(predictions[v["name"]], reference) for v in others) if others else 1.0
-    summary["dnd_relative_l2"] = statistics.fmean(v["relative_l2"] for v in groups["dnd"])
-    summary["dnd_cosine"] = statistics.fmean(v["cosine"] for v in groups["dnd"])
     return summary
+
+
+NAMES = {"dnd": "DnD hyper-convolution generator", "code": "prefix-GPT code generator"}
+
+
+def upgrade(result):
+    """Read results.json from runs that predate the generator-agnostic key names."""
+    result.setdefault("generator", "dnd")
+    for old, new in (("dnd_checkpoint", "generator_checkpoint"), ("dnd_sha256", "generator_sha256"),
+                     ("dnd_train_tasks", "generator_train_tasks"), ("dnd_held_out_task", "generator_held_out_task")):
+        if old in result:
+            result.setdefault(new, result[old])
+    for task in result["tasks"]:
+        for old, new in (("dnd_mean", "generated_mean"), ("dnd_std", "generated_std"),
+                         ("dnd_min", "generated_min"), ("dnd_max", "generated_max"),
+                         ("dnd_relative_l2", "generated_relative_l2"), ("dnd_cosine", "generated_cosine"),
+                         ("dnd_agreement_with_reference", "generated_agreement_with_reference")):
+            if old in task:
+                task.setdefault(new, task[old])
+        task.setdefault("membership", task_membership(
+            task["task"], result["generator_train_tasks"], result["generator_held_out_task"]))
+        for variant in task["variants"]:
+            if "dnd_membership" in variant:
+                variant.setdefault("membership", variant["dnd_membership"])
+    return result
 
 
 def report(args):
     output = Path(args.output)
-    result = json.loads((output / "results.json").read_text())
-    lines = ["# Pretrained DnD generator on the common-sense tasks", ""]
-    lines += [f"Generator checkpoint `{result['dnd_checkpoint']}`, trained on "
-              f"{', '.join(result['dnd_train_tasks'])} with {result['dnd_held_out_task']} held out. "
-              f"Per task: {result['samples']} DnD samples, each conditioned on a different random subset of "
-              f"the task's evaluation prompts, against the last {result['originals']} original LoRA checkpoints. "
-              f"{result['protocol']}, up to {result['max_new_tokens']} new tokens.", ""]
-    header = (f"| Task | DnD sees | Examples | Last-{result['originals']} originals | "
-              f"{result['samples']} DnD samples | Change (pp) | DnD agreement | Original agreement |")
-    lines += [header, "|---|---|---:|---:|---:|---:|---:|---:|"]
+    result = upgrade(json.loads((output / "results.json").read_text()))
+    paired = any("original_mean" in task for task in result["tasks"])
+    name = NAMES.get(result["generator"], result["generator"])
+    lines = [f"# {name} on the common-sense tasks", "",
+             f"Checkpoint `{result['generator_checkpoint']}`, trained on "
+             f"{', '.join(result['generator_train_tasks'])} with {result['generator_held_out_task']} held out. "
+             f"{result['samples']} adapters generated per task, each conditioned on a different random subset of "
+             f"the task's prompts."
+             + (f" Compared against the last {result['originals']} original LoRA checkpoints of the same task."
+                if paired else " The original LoRA checkpoints are not part of this evaluation.")
+             + f" {result['protocol']}, up to {result['max_new_tokens']} new tokens.", ""]
+    if paired:
+        lines += [f"| Task | Generator sees | Examples | Last-{result['originals']} originals | "
+                  f"{result['samples']} generated | Change (pp) | Generated agreement | Original agreement |",
+                  "|---|---|---:|---:|---:|---:|---:|---:|"]
+    else:
+        lines += [f"| Task | Generator sees | Examples | {result['samples']} generated | Range | "
+                  f"Sample agreement |", "|---|---|---:|---:|---:|---:|"]
     for task in result["tasks"]:
-        sees = {v["dnd_membership"] for v in task["variants"] if v["kind"] == "original"}
-        lines.append(
-            f"| {task['task']} | {'/'.join(sorted(sees))} | {task['n']} | "
-            f"{100 * task['original_mean']:.2f}% ± {100 * task['original_std']:.2f} | "
-            f"{100 * task['dnd_mean']:.2f}% ± {100 * task['dnd_std']:.2f} | "
-            f"{task['delta_percentage_points']:+.2f} | "
-            f"{100 * task['dnd_agreement_with_reference']:.2f}% | "
-            f"{100 * task['original_agreement_with_reference']:.2f}% |")
-    lines += ["", "Agreement is measured against the highest-step original checkpoint of the same task. "
-                  "Original agreement is the same measurement between the remaining originals and that "
-                  "reference, so it shows how much of the DnD disagreement is ordinary checkpoint noise.", ""]
-    lines += ["| Task | Adapter | Kind | Accuracy | Invalid | Truncated | Weight relative L2 | Weight cosine |",
-              "|---|---|---|---:|---:|---:|---:|---:|"]
+        generated = f"{100 * task['generated_mean']:.2f}% ± {100 * task['generated_std']:.2f}"
+        if paired:
+            lines.append(
+                f"| {task['task']} | {task['membership']} | {task['n']} | "
+                f"{100 * task['original_mean']:.2f}% ± {100 * task['original_std']:.2f} | {generated} | "
+                f"{task['delta_percentage_points']:+.2f} | "
+                f"{100 * task['generated_agreement_with_reference']:.2f}% | "
+                f"{100 * task['original_agreement_with_reference']:.2f}% |")
+        else:
+            lines.append(
+                f"| {task['task']} | {task['membership']} | {task['n']} | {generated} | "
+                f"{100 * task['generated_min']:.2f}%\u2013{100 * task['generated_max']:.2f}% | "
+                f"{100 * task['sample_agreement']:.2f}% |")
+    if paired:
+        lines += ["", "Agreement is measured against the highest-step original checkpoint of the same task. "
+                      "Original agreement is the same measurement between the remaining originals and that "
+                      "reference, so it shows how much of the generated disagreement is ordinary "
+                      "checkpoint noise.", ""]
+    else:
+        lines += ["", "Sample agreement is the mean pairwise answer agreement between the generated adapters, "
+                      "so it separates conditioning sensitivity from accuracy.", ""]
+    columns = "| Task | Adapter | Kind | Accuracy | Invalid | Truncated |"
+    divider = "|---|---|---|---:|---:|---:|"
+    if paired:
+        columns += " Weight relative L2 | Weight cosine |"
+        divider += "---:|---:|"
+    lines += [columns, divider]
     for task in result["tasks"]:
         for variant in task["variants"]:
-            distance = (f"{100 * variant['relative_l2']:.2f}% | {variant['cosine']:.4f}"
-                        if variant["kind"] == "dnd" else "\u2014 | \u2014")
-            lines.append(
-                f"| {task['task']} | {variant['name']} | {variant.get('dnd_membership', 'generated')} | "
-                f"{100 * variant['accuracy']:.2f}% | {variant['invalid']}/{task['n']} | "
-                f"{variant['truncated']}/{task['n']} | {distance} |")
-    lines += ["", "Weight distances compare each generated adapter with the reference original checkpoint.", ""]
+            row = (f"| {task['task']} | {variant['name']} | {variant.get('membership', 'generated')} | "
+                   f"{100 * variant['accuracy']:.2f}% | {variant['invalid']}/{task['n']} | "
+                   f"{variant['truncated']}/{task['n']} |")
+            if paired:
+                row += (f" {100 * variant['relative_l2']:.2f}% | {variant['cosine']:.4f} |"
+                        if variant["kind"] != "original" else " \u2014 | \u2014 |")
+            lines.append(row)
+    if paired:
+        lines += ["", "Weight distances compare each generated adapter with the reference original checkpoint.", ""]
     text = "\n".join(lines) + "\n"
     if args.markdown:
         Path(args.markdown).write_text(text)
@@ -487,7 +568,8 @@ def main():
     parser.add_argument("--extractor", help="all-MiniLM-L12-v2 condition encoder")
     parser.add_argument("--data-root", help="folder of per-task original LoRA checkpoints")
     parser.add_argument("--samples", type=int, default=5, help="DnD adapters generated per task")
-    parser.add_argument("--originals", type=int, default=5, help="last original checkpoints per task")
+    parser.add_argument("--originals", type=int, default=5,
+                        help="last original checkpoints per task; 0 scores only the generated adapters")
     parser.add_argument("--tasks", nargs="+", default=TASKS, choices=TASKS)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--gpu-memory-utilization", type=float,
