@@ -242,3 +242,17 @@ class CompatibilityTests(unittest.TestCase):
         self.assertIn("DnD hyper-convolution generator", text)
         self.assertIn("| ARC-c | held_out_task | 1172 | 56.06% ± 0.30 | 52.90% ± 0.80 | -3.16 |", text)
         self.assertIn("| ARC-c | original_250 | held_out_task |", text)
+
+
+class ConditioningReuseTests(unittest.TestCase):
+    def test_reuse_refuses_a_changed_conditioning_split(self):
+        base = dict(schema=2, generator="code", generator_sha256="abc", samples=5, originals=0,
+                    selection="greedy", prompt_split="train", tasks=[dict(task="ARC-c")])
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "comparison.json"
+            manifest.write_text(json.dumps(base))
+            self.assertEqual(len(reusable(manifest, base, ["ARC-c"])["tasks"]), 1)
+            with self.assertRaises(ValueError):
+                reusable(manifest, {**base, "prompt_split": "evaluation"}, ["ARC-c"])
+            with self.assertRaises(ValueError):
+                reusable(manifest, {**base, "selection": "top_k 32"}, ["ARC-c"])

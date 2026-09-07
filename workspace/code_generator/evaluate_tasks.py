@@ -39,7 +39,12 @@ def generator_metadata(model):
 
 
 def prompt_file(task, split, output):
-    """Which prompts condition the generator: the evaluation set, or the training set it saw."""
+    """Which prompts condition the generator.
+
+    The generator's prompt embeddings were built from the train split
+    (workspace/code_generator/run.py), so conditioning on the evaluation split
+    is off-distribution and scores lower.
+    """
     if split == "train":
         return repository_root() / "prepare/data" / f"{task}_train.json"
     return Path(evaluation_data(task, repository_root(), output))
@@ -159,8 +164,8 @@ def main():
                         help="last original checkpoints per task to score alongside; 0 leaves them out")
     parser.add_argument("--checkpoint-step", type=int,
                         help="step to condition on; defaults to the task's latest in the generator manifest")
-    parser.add_argument("--prompt-split", choices=["evaluation", "train"], default="evaluation",
-                        help="prompts used as conditioning")
+    parser.add_argument("--prompt-split", choices=["train", "evaluation"], default="train",
+                        help="prompts used as conditioning; the generator was trained on the train split")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-k", type=int, default=0)
     parser.add_argument("--tasks", nargs="+", default=TASKS, choices=TASKS)

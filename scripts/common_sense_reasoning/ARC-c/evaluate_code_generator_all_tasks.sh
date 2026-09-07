@@ -46,7 +46,7 @@ fi
     --generator-checkpoint "$GENERATOR" \
     --samples "${DND_SAMPLES:-5}" \
     --originals "${DND_ORIGINALS:-0}" \
-    --prompt-split "${DND_PROMPT_SPLIT:-evaluation}" \
+    --prompt-split "${DND_PROMPT_SPLIT:-train}" \
     --temperature "${DND_TEMPERATURE:-0}" \
     --top-k "${DND_TOP_K:-0}" \
     --device "${DND_DEVICE:-cuda:0}" \

@@ -225,10 +225,10 @@ def reusable(manifest, record, tasks):
     previous = json.loads(Path(manifest).read_text())
     if previous.get("schema") != record["schema"]:
         raise ValueError(f"{manifest} uses an older layout; use a fresh --output")
-    for key in ("generator", "generator_sha256", "samples", "originals"):
-        if previous.get(key) != record[key]:
+    for key in ("generator", "generator_sha256", "samples", "originals", "prompt_split", "selection"):
+        if previous.get(key) != record.get(key):
             raise ValueError(f"{manifest} was built with {key}={previous.get(key)!r}, "
-                             f"now {record[key]!r}; use a fresh --output")
+                             f"now {record.get(key)!r}; use a fresh --output")
     return dict(tasks=[t for t in previous["tasks"] if t["task"] in tasks])
 
 
