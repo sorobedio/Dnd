@@ -45,3 +45,104 @@ topk mean                                     55.78%      -0.03
 temperature mean                                  55.78%      -0.04
 
 
+
+
+
+  "ARC-c": {
+    "dnd_0": 0.5264505119453925,
+    "dnd_1": 0.5238907849829352,
+    "dnd_2": 0.5324232081911263,
+    "dnd_3": 0.5409556313993175,
+    "dnd_4": 0.5213310580204779,
+    "original_246": 0.5554607508532423,
+    "original_247": 0.5622866894197952,
+    "original_248": 0.5614334470989761,
+    "original_249": 0.5631399317406144,
+    "original_250": 0.560580204778157
+  },
+  "OBQA": {
+    "dnd_0": 0.542,
+    "dnd_1": 0.538,
+    "dnd_2": 0.534,
+    "dnd_3": 0.538,
+    "dnd_4": 0.536,
+    "original_296": 0.702,
+    "original_297": 0.704,
+    "original_298": 0.704,
+    "original_299": 0.7,
+    "original_300": 0.704
+  },
+  "WinoGrande": {
+    "dnd_0": 0.17442778216258878,
+    "dnd_1": 0.26519337016574585,
+    "dnd_2": 0.25887924230465664,
+    "dnd_3": 0.12628255722178375,
+    "dnd_4": 0.32202052091554856,
+    "original_246": 0.5043409629044988,
+    "original_247": 0.5043409629044988,
+    "original_248": 0.5043409629044988,
+    "original_249": 0.5043409629044988,
+    "original_250": 0.48855564325177586
+  },
+  "ARC-e": {
+    "dnd_0": 0.7542087542087542,
+    "dnd_1": 0.7668350168350169,
+    "dnd_2": 0.7558922558922558,
+    "dnd_3": 0.7550505050505051,
+    "dnd_4": 0.7525252525252525,
+    "original_216": 0.7664141414141414,
+    "original_217": 0.7680976430976431,
+    "original_218": 0.7634680134680135,
+    "original_219": 0.7680976430976431,
+    "original_220": 0.7702020202020202
+  },
+  "PIQA": {
+    "dnd_0": 0.4912948857453754,
+    "dnd_1": 0.5054406964091404,
+    "dnd_2": 0.5043525571273123,
+    "dnd_3": 0.5038084874863983,
+    "dnd_4": 0.49836779107725787,
+    "original_211": 0.485310119695321,
+    "original_212": 0.4880304678998912,
+    "original_213": 0.48694232861806314,
+    "original_214": 0.4809575625680087,
+    "original_215": 0.48585418933623503
+  },
+
+  "BoolQ": {
+    "dnd_0": 0.6217125382262997,
+    "dnd_1": 0.6217125382262997,
+    "dnd_2": 0.6223241590214067,
+    "dnd_3": 0.6217125382262997,
+    "dnd_4": 0.6217125382262997,
+    "original_296": 0.6293577981651376,
+    "original_297": 0.6290519877675841,
+    "original_298": 0.627217125382263,
+    "original_299": 0.6269113149847095,
+    "original_300": 0.6262996941896024
+  },
+  "HellaSwag": {
+    "dnd_0": 0.5355506871141207,
+    "dnd_1": 0.5358494323839873,
+    "dnd_2": 0.5389364668392751,
+    "dnd_3": 0.5360485958972316,
+    "dnd_4": 0.5367456681935869,
+    "original_296": 0.5395339573790081,
+    "original_297": 0.5408285202150966,
+    "original_298": 0.5411272654849631,
+    "original_299": 0.543218482374029,
+    "original_300": 0.5425214100776737
+  }
+}
+INFO 09-07 08:53:49 [utils.py:615] [shutdown] Process manager: send sigterm to process EngineCore
+(EngineCore pid=2865579) INFO 09-07 08:53:49 [core.py:1329] [shutdown] EngineCore: trigger received signal=SIGTERM
+(EngineCore pid=2865579) INFO 09-07 08:53:49 [core.py:1465] [shutdown] EngineCore: start mode=abort timeout=0s
+(EngineCore pid=2865579) INFO 09-07 08:53:49 [core.py:1496] [shutdown] EngineCore: request processing complete; starting resource teardown
+(EngineCore pid=2865579) INFO 09-07 08:53:49 [core.py:1342] [shutdown] EngineCore: exiting busy loop
+Wrote outputs/dnd_pretrained_common_sense/report.md
+Adapters, predictions and reports are under outputs/dnd_pretrained_common_sense
+(dnd) soro@nipa2:/data-vol1/soro/Projects/Dnd$
+
+
+
+
