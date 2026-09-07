@@ -207,12 +207,20 @@ def main(eval_dataset: str, test_dataset: str):
     model.to(config["device"])
 
     # load module
+    data_candidates = [
+        Path(COND_ROOT) / f"{test_dataset}_test.json",
+        Path(COND_ROOT) / f"{test_dataset}_validation.json",
+    ]
+    data_path = next((path for path in data_candidates if path.exists()), None)
+    if data_path is None:
+        raise FileNotFoundError(f"No test or validation file found for {test_dataset}: {data_candidates}")
+
     test_set = Dataset(
         checkpoint_folders=[f"{DATASET_ROOT}/ARC-e"],
         tokenizer=tokenizer,
         expected_iteration=None,
         real_length=config["real_length"],
-        texts=[json.load(open(f"{COND_ROOT}/{test_dataset}_test.json", "r", encoding="utf-8"))],
+        texts=[json.load(open(data_path, "r", encoding="utf-8"))],
         num_texts=config["num_texts"],
         text_tokenizer=config["text_tokenizer"],
         max_text_length=config["max_text_length"],
