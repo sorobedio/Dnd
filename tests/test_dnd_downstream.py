@@ -256,3 +256,23 @@ class ConditioningReuseTests(unittest.TestCase):
                 reusable(manifest, {**base, "prompt_split": "evaluation"}, ["ARC-c"])
             with self.assertRaises(ValueError):
                 reusable(manifest, {**base, "selection": "top_k 32"}, ["ARC-c"])
+
+
+class ConditioningStepTests(unittest.TestCase):
+    def test_step_comes_from_the_final_checkpoint_on_disk(self):
+        from workspace.code_generator.evaluate_tasks import conditioning_step
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints(root / "ARC-c", [246, 247, 248, 249, 250])
+            self.assertEqual(conditioning_step("ARC-c", Namespace(checkpoint_step=None, data_root=root)), 250)
+            self.assertEqual(conditioning_step("ARC-c", Namespace(checkpoint_step=100, data_root=root)), 100)
+
+    def test_a_task_without_checkpoints_is_an_error_not_another_task_step(self):
+        from workspace.code_generator.evaluate_tasks import conditioning_step
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "OBQA").mkdir()
+            with self.assertRaises(ValueError):
+                conditioning_step("OBQA", Namespace(checkpoint_step=None, data_root=root))

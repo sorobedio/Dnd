@@ -50,10 +50,23 @@ def prompt_file(task, split, output):
     return Path(evaluation_data(task, repository_root(), output))
 
 
+def conditioning_step(task, args):
+    """The final checkpoint step of the task.
+
+    The generator's own manifest only knows the steps the VQ encoded, which is an
+    unsorted subset per task and is missing entirely for tasks the VQ never saw,
+    so the step comes from the last checkpoint on disk instead.
+    """
+    if args.checkpoint_step is not None:
+        return args.checkpoint_step
+    return int(select_originals(Path(args.data_root) / task, 1)[0].stem)
+
+
 def generate_adapters(task, args, output):
     """One adapter per seed: run.generate writes codes, then the VQ decoder writes weights."""
     from workspace.code_generator.run import generate as run_generate
 
+    step = conditioning_step(task, args)
     prompts = prompt_file(task, args.prompt_split, output)
     if not Path(prompts).exists():
         raise FileNotFoundError(prompts)
@@ -68,7 +81,7 @@ def generate_adapters(task, args, output):
             staging.mkdir(parents=True)
             run_generate(argparse.Namespace(
                 model=str(args.generator_checkpoint), prompts=str(prompts), task=task,
-                checkpoint_step=args.checkpoint_step, output=str(codes), encoder=None,
+                checkpoint_step=step, output=str(codes), encoder=None,
                 decode_dir=str(staging / "decoded"), vq_model=args.vq_model,
                 temperature=args.temperature, top_k=args.top_k, seed=SEED + index, device=args.device))
             decoded = next((staging / "decoded").glob(f"{task}/*/adapter_model.safetensors"))
@@ -86,7 +99,7 @@ def generate_adapters(task, args, output):
                              temperature=generation["temperature"], top_k=generation["top_k"],
                              checkpoint_step=generation["checkpoint_step"],
                              step_source=generation["step_source"]))
-        print(f"{task} {folder.name}: adapter ready", flush=True)
+        print(f"{task} {folder.name}: adapter ready at step {step}", flush=True)
     return variants
 
 
@@ -108,8 +121,8 @@ def prepare(args):
         generator_step=info["generator_step"], vq_model=info["vq_model"], encoder=info["encoder"],
         base_model=str(args.base_model), data_root=str(args.data_root),
         samples=args.samples, originals=args.originals, condition_prompts=info["num_prompts"], seed=SEED,
-        selection=f"greedy code decoding at temperature {args.temperature} and top_k {args.top_k}; "
-                  f"samples differ only in the conditioning prompts",
+        selection=f"code decoding at temperature {args.temperature} and top_k {args.top_k}, conditioned on "
+                  f"each task's final checkpoint step; samples differ only in the conditioning prompts",
         prompt_split=args.prompt_split, tasks=[],
     )
     record.update(reusable(manifest, record, args.tasks))
@@ -163,7 +176,7 @@ def main():
     parser.add_argument("--originals", type=int, default=0,
                         help="last original checkpoints per task to score alongside; 0 leaves them out")
     parser.add_argument("--checkpoint-step", type=int,
-                        help="step to condition on; defaults to the task's latest in the generator manifest")
+                        help="step to condition on; defaults to the task's final checkpoint on disk")
     parser.add_argument("--prompt-split", choices=["train", "evaluation"], default="train",
                         help="prompts used as conditioning; the generator was trained on the train split")
     parser.add_argument("--temperature", type=float, default=0.0)
